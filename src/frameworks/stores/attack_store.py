@@ -12,10 +12,15 @@ class AttackStore(BaseDomainStore):
     Restores 100% of descriptions, tactics, mitigations, and sub-technique hierarchies.
     """
 
-    def __init__(self, json_path: Optional[Path] = None):
-        if json_path is None:
-            json_path = Path(__file__).parent.parent.parent.parent / "data" / "official" / "enterprise-attack.json"
-        self.json_path = Path(json_path)
+    def __init__(self, json_paths: Optional[List[Path]] = None):
+        base_dir = Path(__file__).parent.parent.parent.parent / "data" / "official"
+        if json_paths is None:
+            json_paths = [
+                base_dir / "enterprise-attack.json",
+                base_dir / "mobile-attack.json",
+                base_dir / "ics-attack.json"
+            ]
+        self.json_paths = [Path(p) for p in json_paths]
         self.entities: Dict[str, NodeEntity] = {}              # T1059 -> NodeEntity
         self.stix_to_id: Dict[str, str] = {}                  # stix_id -> T1059
         self.local_edges: Dict[str, List[EdgeLink]] = {}       # T1059 -> [EdgeLink, ...]
@@ -28,68 +33,78 @@ class AttackStore(BaseDomainStore):
 
     def _normalize_id(self, raw_id: str) -> str:
         clean = raw_id.strip().upper()
-        # Ensure ATT&CK technique format (e.g. T1059 or T1059.001)
         return clean
 
     def _load(self):
-        if not self.json_path.exists():
-            return
-
-        with open(self.json_path, "r", encoding="utf-8") as f:
-            data = json.load(f)
-
-        objects = data.get("objects", [])
-
-        # 1. Parse Tactics
-        for o in objects:
-            if o.get("type") == "x-mitre-tactic":
-                short = o.get("x_mitre_shortname", "")
-                if short:
-                    self.tactics[short] = o.get("name", short.capitalize())
-
-        # 2. Parse Techniques and Sub-techniques
-        for o in objects:
-            if o.get("type") != "attack-pattern" or o.get("revoked", False):
+        for json_path in self.json_paths:
+            if not json_path.exists():
                 continue
 
-            tech_id = None
-            for ref in o.get("external_references", []):
-                if ref.get("source_name") == "mitre-attack":
-                    tech_id = self._normalize_id(ref.get("external_id", ""))
-                    break
+            matrix_type = "Enterprise"
+            if "mobile" in json_path.name.lower():
+                matrix_type = "Mobile"
+            elif "ics" in json_path.name.lower():
+                matrix_type = "ICS/OT"
 
-            if not tech_id:
-                continue
+            with open(json_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
 
-            stix_id = o.get("id")
-            if stix_id:
-                self.stix_to_id[stix_id] = tech_id
+            objects = data.get("objects", [])
 
-            # Extract tactics
-            tactic_names = []
-            for phase in o.get("kill_chain_phases", []):
-                if phase.get("kill_chain_name") == "mitre-attack":
-                    t_name = self.tactics.get(phase.get("phase_name"), phase.get("phase_name", "").capitalize())
-                    tactic_names.append(t_name)
+            # 1. Parse Tactics
+            for o in objects:
+                if o.get("type") == "x-mitre-tactic":
+                    short = o.get("x_mitre_shortname", "")
+                    if short:
+                        self.tactics[short] = o.get("name", short.capitalize())
 
-            primary_tactic = tactic_names[0] if tactic_names else "Enterprise"
+            # 2. Parse Techniques and Sub-techniques
+            for o in objects:
+                if o.get("type") != "attack-pattern" or o.get("revoked", False):
+                    continue
 
-            entity = NodeEntity(
-                id=tech_id,
-                framework="ATT&CK",
-                name=o.get("name", ""),
-                description=o.get("description", ""),
-                category=primary_tactic,
-                metadata={
-                    "stix_id": stix_id,
-                    "tactics": tactic_names,
-                    "is_subtechnique": o.get("x_mitre_is_subtechnique", False),
-                    "platforms": o.get("x_mitre_platforms", []),
-                    "data_sources": o.get("x_mitre_data_sources", [])
-                }
-            )
-            self.entities[tech_id] = entity
-            self.local_edges[tech_id] = []
+                tech_id = None
+                for ref in o.get("external_references", []):
+                    src = ref.get("source_name", "").lower()
+                    if "attack" in src or "mitre" in src:
+                        ext = ref.get("external_id", "")
+                        if ext and (ext.upper().startswith("T") or ext.upper().startswith("TA")):
+                            tech_id = self._normalize_id(ext)
+                            break
+
+                if not tech_id or tech_id in self.entities:
+                    continue
+
+                stix_id = o.get("id")
+                if stix_id:
+                    self.stix_to_id[stix_id] = tech_id
+
+                # Extract tactics
+                tactic_names = []
+                for phase in o.get("kill_chain_phases", []):
+                    if "attack" in phase.get("kill_chain_name", "").lower():
+                        t_name = self.tactics.get(phase.get("phase_name"), phase.get("phase_name", "").capitalize())
+                        tactic_names.append(t_name)
+
+                primary_tactic = tactic_names[0] if tactic_names else matrix_type
+
+                entity = NodeEntity(
+                    id=tech_id,
+                    framework="ATT&CK",
+                    name=o.get("name", ""),
+                    description=o.get("description", ""),
+                    category=f"{matrix_type}: {primary_tactic}",
+                    metadata={
+                        "stix_id": stix_id,
+                        "matrix": matrix_type,
+                        "tactics": tactic_names,
+                        "is_subtechnique": o.get("x_mitre_is_subtechnique", False),
+                        "platforms": o.get("x_mitre_platforms", []),
+                        "data_sources": o.get("x_mitre_data_sources", [])
+                    }
+                )
+                self.entities[tech_id] = entity
+                self.local_edges[tech_id] = []
 
         # 3. Parse Relationships (subtechnique-of, etc.)
         for o in objects:

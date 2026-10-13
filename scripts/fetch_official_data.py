@@ -23,6 +23,16 @@ SOURCES = {
         "filename": "enterprise-attack.json",
         "description": "MITRE Enterprise ATT&CK (STIX 2.1 JSON)"
     },
+    "attack_mobile": {
+        "url": "https://raw.githubusercontent.com/mitre-attack/attack-stix-data/master/mobile-attack/mobile-attack.json",
+        "filename": "mobile-attack.json",
+        "description": "MITRE Mobile ATT&CK (Android/iOS STIX 2.1 JSON)"
+    },
+    "attack_ics": {
+        "url": "https://raw.githubusercontent.com/mitre-attack/attack-stix-data/master/ics-attack/ics-attack.json",
+        "filename": "ics-attack.json",
+        "description": "MITRE ICS/OT/IoT ATT&CK (Embedded & Industrial STIX 2.1 JSON)"
+    },
     "d3fend": {
         "url": "https://d3fend.mitre.org/ontologies/d3fend.json",
         "filename": "d3fend.json",

@@ -201,12 +201,77 @@ class MetaRouterTemplate:
         )
 
 
+class ICSAttackTemplate(FrameworkTemplate):
+    def __init__(self):
+        super().__init__(
+            name="ICS_ATTACK",
+            label="Industrial & IoT (ICS/OT)",
+            description="Explores operational technology threats targeting PLCs, SCADA, RTUs, field buses, and embedded industrial systems."
+        )
+
+    def build_goal_question(self, current_node_id: str, goal: str) -> Noul:
+        return Noul(
+            instructions=(
+                f"Does the ICS/OT technique '{current_node_id}' directly fulfill the operational threat/defense "
+                f"objective: '{goal}' in the physical or industrial control environment?"
+            )
+        )
+
+    def build_choice_question(self, goal: str, branches: Dict[str, str]) -> Choice:
+        return Choice(
+            instructions=(
+                f"Goal: '{goal}'. Which ICS/OT branch captures the most critical disruption to field devices, "
+                f"control logic, safety systems, or industrial protocol integrity?"
+            ),
+            criteria=branches
+        )
+
+    def build_score_question(self, goal: str) -> Score:
+        return Score(
+            instructions=f"Rate the industrial process impact of this technique for '{goal}':",
+            criteria=["Incidental telemetry loss", "Controller logic compromise", "Critical physical process shutdown"]
+        )
+
+
+class MobileAttackTemplate(FrameworkTemplate):
+    def __init__(self):
+        super().__init__(
+            name="MOBILE_ATTACK",
+            label="Mobile Device (Android/iOS)",
+            description="Explores mobile platform threats (app sandboxing, permission abuse, baseband, OS jailbreaking)."
+        )
+
+    def build_goal_question(self, current_node_id: str, goal: str) -> Noul:
+        return Noul(
+            instructions=(
+                f"Does the mobile technique '{current_node_id}' satisfy the target mobile device investigation: '{goal}'?"
+            )
+        )
+
+    def build_choice_question(self, goal: str, branches: Dict[str, str]) -> Choice:
+        return Choice(
+            instructions=(
+                f"Goal: '{goal}'. Which mobile vector represents the key exploit mechanism (repackaging, SMS/call interception, "
+                f"root escalation, or credential harvesting)?"
+            ),
+            criteria=branches
+        )
+
+    def build_score_question(self, goal: str) -> Score:
+        return Score(
+            instructions=f"Rate the severity of mobile device compromise for '{goal}':",
+            criteria=["Minor permission abuse", "Background persistence", "Full OS root/kernel compromise"]
+        )
+
+
 TEMPLATES: Dict[str, FrameworkTemplate] = {
     "CAPEC": CAPECTemplate(),
     "CWE": CWETemplate(),
     "ATTACK": AttackTemplate(),
     "ATLAS": AtlasTemplate(),
     "D3FEND": D3FENDTemplate(),
+    "ICS_ATTACK": ICSAttackTemplate(),
+    "MOBILE_ATTACK": MobileAttackTemplate(),
 }
 
 TEMPLATES_CATALOG = [
@@ -269,6 +334,30 @@ TEMPLATES_CATALOG = [
         "choiceQuestion": "Given the security goal '{goal}', which D3FEND technique offers the most effective and direct mitigation for the identified threat?",
         "scoreQuestion": "Rate the mitigation effectiveness of this defensive countermeasure against '{goal}':",
         "criteriaScale": ["Marginal defense", "Partial hardening/detection", "Complete primary mitigation"]
+    },
+    {
+        "framework": "ICS_ATTACK",
+        "name": "ICSAttackTemplate",
+        "label": "Industrial & IoT (ICS/OT)",
+        "icon": "Radio",
+        "color": "#D97706",
+        "description": "Explores threats against Operational Technology, SCADA, PLCs, RTUs, and Industrial IoT devices.",
+        "goalQuestion": "Does the ICS/OT technique '{node}' fulfill the operational objective: '{goal}' in the physical or industrial control environment?",
+        "choiceQuestion": "Which ICS/OT branch captures the most critical disruption to field devices, control logic, or process integrity?",
+        "scoreQuestion": "Rate the industrial process impact of this technique for '{goal}':",
+        "criteriaScale": ["Incidental telemetry loss", "Controller logic compromise", "Critical physical process shutdown"]
+    },
+    {
+        "framework": "MOBILE_ATTACK",
+        "name": "MobileAttackTemplate",
+        "label": "Mobile Device (Android/iOS)",
+        "icon": "Smartphone",
+        "color": "#0284C7",
+        "description": "Explores mobile operating system threats (sandboxing, permissions, baseband, malicious applications).",
+        "goalQuestion": "Does the mobile technique '{node}' satisfy the target mobile device investigation: '{goal}'?",
+        "choiceQuestion": "Which mobile vector represents the key exploit mechanism (app repackaging, permission abuse, or kernel compromise)?",
+        "scoreQuestion": "Rate the severity of mobile device compromise for '{goal}':",
+        "criteriaScale": ["Minor permission abuse", "Background persistence", "Full OS root/kernel compromise"]
     },
     {
         "framework": "META_ROUTER",
