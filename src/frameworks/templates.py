@@ -208,3 +208,78 @@ TEMPLATES: Dict[str, FrameworkTemplate] = {
     "ATLAS": AtlasTemplate(),
     "D3FEND": D3FENDTemplate(),
 }
+
+TEMPLATES_CATALOG = [
+    {
+        "framework": "CAPEC",
+        "name": "CAPECTemplate",
+        "label": "Attack Pattern",
+        "icon": "Crosshair",
+        "color": "#F97316",
+        "description": "Explores adversary attack patterns, execution flow, prerequisites and privilege escalation.",
+        "goalQuestion": "Is the current entity '{node}' already the final desired answer or countermeasure for the user goal: '{goal}'?",
+        "choiceQuestion": "Given the threat objective '{goal}', which attack branch represents the most critical progression or intermediate bridge?",
+        "scoreQuestion": "How relevant is this attack pattern to the overall threat investigation '{goal}'?",
+        "criteriaScale": ["Low relevance attack", "Moderate prerequisite attack", "Direct primary attack vector"]
+    },
+    {
+        "framework": "CWE",
+        "name": "CWETemplate",
+        "label": "Software Weakness",
+        "icon": "Bug",
+        "color": "#8B5CF6",
+        "description": "Explores code-level vulnerabilities, architectural flaws and fundamental root-causes.",
+        "goalQuestion": "Does the software weakness '{node}' constitute the definitive solution to the goal: '{goal}'?",
+        "choiceQuestion": "Given the goal '{goal}', which branch represents the core programming or architectural root-cause flaw?",
+        "scoreQuestion": "Rate the severity of this software weakness in relation to '{goal}':",
+        "criteriaScale": ["Peripheral code defect", "Significant security flaw", "Critical exploitable vulnerability"]
+    },
+    {
+        "framework": "ATTACK",
+        "name": "AttackTemplate",
+        "label": "Adversary Technique",
+        "icon": "Flame",
+        "color": "#EF4444",
+        "description": "Explores MITRE Enterprise ATT&CK tactical techniques, operational execution mechanisms and procedures.",
+        "goalQuestion": "Does adversary technique '{node}' directly satisfy the goal: '{goal}'?",
+        "choiceQuestion": "Given the goal '{goal}', which adversary technique branch advances the operational attack chain towards the target?",
+        "scoreQuestion": "How critical is this adversary technique to achieving the objective '{goal}'?",
+        "criteriaScale": ["Incidental technique", "Core enabling technique", "Direct impact technique"]
+    },
+    {
+        "framework": "ATLAS",
+        "name": "AtlasTemplate",
+        "label": "AI/ML Threat",
+        "icon": "Cpu",
+        "color": "#E11D48",
+        "description": "Explores MITRE ATLAS threats specific to AI/ML systems (prompt injection, model evasion, data poisoning).",
+        "goalQuestion": "Does AI/ML threat technique '{node}' satisfy the adversarial goal: '{goal}'?",
+        "choiceQuestion": "Given the goal '{goal}', which branch captures the specific AI attack vector (prompt manipulation, data evasion, or model theft)?",
+        "scoreQuestion": "Rate the specificity of this AI attack technique for '{goal}':",
+        "criteriaScale": ["Generic IT threat", "Indirect ML effect", "Direct adversarial AI exploit"]
+    },
+    {
+        "framework": "D3FEND",
+        "name": "D3FENDTemplate",
+        "label": "Defensive Countermeasure",
+        "icon": "ShieldCheck",
+        "color": "#10B981",
+        "description": "Explores MITRE D3FEND defensive countermeasures (Harden, Detect, Isolate, Evict, Model, Verify).",
+        "goalQuestion": "Does this defensive countermeasure '{node}' directly satisfy, neutralize, or answer the user's defensive security goal: '{goal}'?",
+        "choiceQuestion": "Given the security goal '{goal}', which D3FEND technique offers the most effective and direct mitigation for the identified threat?",
+        "scoreQuestion": "Rate the mitigation effectiveness of this defensive countermeasure against '{goal}':",
+        "criteriaScale": ["Marginal defense", "Partial hardening/detection", "Complete primary mitigation"]
+    },
+    {
+        "framework": "META_ROUTER",
+        "name": "MetaRouterTemplate",
+        "label": "Ontology Meta-Router",
+        "icon": "Compass",
+        "color": "#06B6D4",
+        "description": "Evaluates cross-framework transitions and selects optimal domain experts (CWE, CAPEC, ATT&CK, ATLAS, D3FEND).",
+        "goalQuestion": "Is current domain investigation phase concluding the user goal: '{goal}'?",
+        "choiceQuestion": "Given the investigation goal '{goal}', which cybersecurity domain/framework should be navigated to next?",
+        "scoreQuestion": "How close is the current phase to concluding the defensive investigation for '{goal}'?",
+        "criteriaScale": ["Phase 1: Attack surface", "Phase 2: Technical flaw", "Phase 3: Adversary action", "Phase 4: Defensive mitigation"]
+    }
+]

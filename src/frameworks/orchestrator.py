@@ -44,15 +44,18 @@ class ModularOrchestrator:
         self,
         current_node_id: str,
         traversed_path: List[str],
-        goal: str
+        goal: str,
+        strategy: str = "canonical"
     ) -> Optional[Dict[str, Any]]:
         """
         Executes one full modular hop:
-          1. Meta-Router selects target framework.
+          1. Meta-Router selects target framework using chosen strategy.
           2. Scoped Explorer applies domain template.
         """
         # Step 1: Meta-Router decision
-        target_fw, router_info = self.meta_router.route(current_node_id, goal, traversed_path)
+        target_fw, router_info = self.meta_router.route(
+            current_node_id, goal, traversed_path, strategy=strategy
+        )
 
         # Step 2: Scoped Explorer decision
         explorer_result = self.scoped_explorer.explore(
@@ -86,3 +89,31 @@ class ModularOrchestrator:
             "level_1_router": router_info,
             "level_2_explorer": explorer_result
         }
+
+    def query_framework(
+        self,
+        current_node_id: str,
+        target_framework: str,
+        goal: str
+    ) -> Optional[Dict[str, Any]]:
+        """Queries a single framework directly on current_node_id without path restrictions."""
+        return self.scoped_explorer.explore(
+            current_node_id=current_node_id,
+            target_framework=target_framework,
+            goal=goal,
+            visited_ids=[]
+        )
+
+    def fan_out_evaluation(
+        self,
+        current_node_id: str,
+        frameworks: List[str],
+        goal: str
+    ) -> List[Dict[str, Any]]:
+        """Evaluates multiple frameworks simultaneously for comparative analysis."""
+        results = []
+        for fw in frameworks:
+            res = self.query_framework(current_node_id, fw, goal)
+            if res:
+                results.append(res)
+        return results

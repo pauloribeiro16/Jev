@@ -1,10 +1,18 @@
 """Meta-Router powered by Jev (System 1) to decide which framework/domain to query next."""
 
 import time
+from enum import Enum
 from typing import Dict, Any, Tuple
 from neo4j import GraphDatabase
-from typesafe_sdk import TypeSafeClient
+from typesafe_sdk import TypeSafeClient, Choice
 from .templates import MetaRouterTemplate
+
+
+class MetaRouterStrategy(str, Enum):
+    CANONICAL = "canonical"              # CWE -> CAPEC -> ATT&CK -> D3FEND
+    FAST_DEFENSE = "fast_defense"        # Immediate jump to D3FEND when available
+    THREAT_HUNTING = "threat_hunting"    # ATT&CK -> CAPEC -> CWE -> D3FEND
+    FREE = "free"                        # Pure semantic unconstrained Jev
 
 
 class MetaRouter:
@@ -75,13 +83,36 @@ class MetaRouter:
 
         return candidates
 
-    def route(self, current_node_id: str, goal: str, path: list) -> Tuple[str, Dict[str, Any]]:
+    def route(
+        self,
+        current_node_id: str,
+        goal: str,
+        path: list,
+        strategy: str = "canonical"
+    ) -> Tuple[str, Dict[str, Any]]:
         """
-        Evaluates the current state and routes to the best target framework.
-        Returns: (chosen_framework, metadata_record)
+        Evaluates current state and routes to target framework using selected strategy:
+          - CANONICAL: Weakness (CWE) -> Attack Pattern (CAPEC) -> Technique (ATT&CK) -> Defense (D3FEND).
+          - FAST_DEFENSE: Opportunistically jumps directly to D3FEND whenever bridge exists.
+          - THREAT_HUNTING: Technique (ATT&CK) -> Attack Pattern (CAPEC) -> Weakness (CWE) -> Defense.
+          - FREE: Unconstrained semantic Jev choice.
         """
         current_framework = self.detect_node_framework(current_node_id)
         candidates = self.get_candidate_frameworks(current_node_id, current_framework)
+
+        # Fast Defense shortcut: if D3FEND is directly reachable, jump immediately
+        if strategy == MetaRouterStrategy.FAST_DEFENSE.value and "D3FEND" in candidates:
+            return "D3FEND", {
+                "current_framework": current_framework,
+                "router_decision": "D3FEND",
+                "target_framework": "D3FEND",
+                "strategy_applied": "FAST_DEFENSE_SHORTCUT",
+                "latency_ms": 0.0,
+                "candidates": candidates,
+                "phase_score": 1.0,
+                "jev_state": {"strategy": "FAST_DEFENSE_SHORTCUT", "current_node": current_node_id},
+                "jev_questions": {"shortcut": "Direct bridge to D3FEND taken by Fast Defense strategy."}
+            }
 
         # If only STAY_LOCAL is available, no routing ambiguity
         if len(candidates) == 1:
@@ -89,23 +120,32 @@ class MetaRouter:
                 "current_framework": current_framework,
                 "router_decision": "STAY_LOCAL",
                 "target_framework": current_framework,
+                "strategy_applied": strategy,
                 "latency_ms": 0.0,
                 "candidates": candidates
             }
 
+        # Strategy-aware prompt formulation
+        strategy_desc = "Canonical Lifecycle (CWE -> CAPEC -> ATT&CK -> D3FEND)"
+        if strategy == MetaRouterStrategy.THREAT_HUNTING.value:
+            strategy_desc = "Threat Hunting Investigation (ATT&CK -> CAPEC -> CWE -> D3FEND)"
+        elif strategy == MetaRouterStrategy.FREE.value:
+            strategy_desc = "Free Semantic Navigation"
+
         state_payload = {
             "user_goal": goal,
+            "strategy": strategy_desc,
             "current_node": current_node_id,
             "current_framework": current_framework,
             "traversed_path": " -> ".join(path),
             "candidate_frameworks": candidates
         }
 
-        question = MetaRouterTemplate.build_framework_selection_question(
-            goal=goal,
-            current_phase=f"Investigating {current_framework} ({current_node_id})",
-            candidate_frameworks=candidates
+        instructions = (
+            f"Strategy: '{strategy_desc}'. User Goal: '{goal}'. Current Node: {current_node_id} ({current_framework}). "
+            f"Which cybersecurity domain/framework should the investigation navigate to next?"
         )
+        question = Choice(instructions=instructions, criteria=candidates)
         score_q = MetaRouterTemplate.build_phase_score_question(goal, current_framework)
 
         t0 = time.time()
@@ -125,6 +165,7 @@ class MetaRouter:
             "current_framework": current_framework,
             "router_decision": chosen_key,
             "target_framework": target_fw,
+            "strategy_applied": strategy,
             "latency_ms": latency_ms,
             "candidates": candidates,
             "phase_score": response.scores["phase_progress"].score,
