@@ -25,3 +25,4 @@ tmp/
 
 # Downloaded official ontology data (fetch via scripts/fetch_official_data.py)
 data/official/
+data/canonical_graph_snapshot.json
