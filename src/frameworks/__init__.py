@@ -4,6 +4,7 @@ from .templates import TEMPLATES, FrameworkTemplate, CAPECTemplate, CWETemplate,
 from .meta_router import MetaRouter
 from .scoped_explorer import ScopedExplorer
 from .orchestrator import ModularOrchestrator
+from .stores import FederatedStore, GraphExporter
 
 __all__ = [
     "TEMPLATES",
@@ -15,5 +16,8 @@ __all__ = [
     "D3FENDTemplate",
     "MetaRouter",
     "ScopedExplorer",
-    "ModularOrchestrator"
+    "ModularOrchestrator",
+    "FederatedStore",
+    "GraphExporter"
 ]
+

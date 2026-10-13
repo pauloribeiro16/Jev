@@ -5,17 +5,25 @@ from typing import Dict, Any, List, Optional
 from neo4j import GraphDatabase
 from typesafe_sdk import TypeSafeClient
 from .templates import TEMPLATES, D3FENDTemplate
+from .stores import FederatedStore
 
 
 class ScopedExplorer:
     """
     Executes scoped node expansion within a single framework (or across a chosen bridge),
     applying the framework's domain-specific question templates.
+    Supports high-speed in-memory FederatedStore (<0.1ms) or legacy Neo4j driver.
     """
 
-    def __init__(self, client: TypeSafeClient, driver: GraphDatabase.driver):
+    def __init__(
+        self,
+        client: TypeSafeClient,
+        driver: Optional[GraphDatabase.driver] = None,
+        store: Optional[FederatedStore] = None
+    ):
         self.client = client
         self.driver = driver
+        self.store = store or (FederatedStore.get_instance() if driver is None else None)
 
     def query_scoped_neighbors(
         self,
@@ -25,9 +33,20 @@ class ScopedExplorer:
         max_limit: int = 12
     ) -> List[Dict[str, Any]]:
         """
-        Queries Neo4j for neighbors that specifically match the target framework label
-        or stay within current refinement hierarchy.
+        Queries for neighbors that specifically match the target framework label.
+        Uses in-memory FederatedStore if available, otherwise queries Neo4j.
         """
+        if self.store is not None:
+            return self.store.get_scoped_neighbors(
+                current_node_id,
+                target_framework=target_framework,
+                visited_ids=visited_ids,
+                max_limit=max_limit
+            )
+
+        if self.driver is None:
+            return []
+
         cypher = """
         MATCH (curr)
         WHERE coalesce(curr.capecId, curr.cweId, curr.attackId, curr.d3fendId, curr.atlasId, curr.subDomainId, curr.id) = $curr_id
@@ -46,7 +65,6 @@ class ScopedExplorer:
         with self.driver.session() as s:
             records = s.run(cypher, curr_id=current_node_id, target_fw=target_framework, visited_ids=visited_ids, limit=max_limit).data()
 
-        # If strict target_fw gave 0 results (e.g. at a bridge hub like SubDomain), allow cross-framework fallback
         if not records and target_framework != "ALL":
             with self.driver.session() as s:
                 records = s.run(cypher, curr_id=current_node_id, target_fw="ALL", visited_ids=visited_ids, limit=max_limit).data()
@@ -66,7 +84,10 @@ class ScopedExplorer:
         template = TEMPLATES.get(target_framework, TEMPLATES["D3FEND"])
 
         t0_db = time.time()
-        cypher_used = """MATCH (curr)
+        if self.store is not None:
+            cypher_used = f"FederatedStore.get_scoped_neighbors(current_id='{current_node_id}', target_fw='{target_framework}')"
+        else:
+            cypher_used = """MATCH (curr)
 WHERE coalesce(curr.capecId, curr.cweId, curr.attackId, curr.d3fendId, curr.atlasId, curr.subDomainId, curr.id) = $curr_id
 MATCH (curr)-[r]-(neighbor)
 WHERE (labels(neighbor)[0] = $target_fw OR $target_fw = 'ALL')
