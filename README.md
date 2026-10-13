@@ -37,19 +37,20 @@ O Neo4j contém a integração das principais ontologias técnicas de segurança
 ├── AGENTS.md                 # Diretrizes para agentes de IA
 ├── README.md                 # Documentação do projeto
 ├── requirements.txt          # Dependências Python
-├── app/
-│   └── graph_ui.py           # Interface Web Streamlit interativa (Vis.js + Inspector)
 ├── data/
 │   └── tinytask_kg.cypher    # Grafo sintético inicial de referência
 ├── manuscritos/
 │   ├── 01_traversal_confidence_analysis.md  # Manuscrito #01: Calibração de confiança
-│   └── 02_threat_modeling_cwe_capec_mitre.md # Manuscrito #02: Ontologias de ameaças
+│   ├── 02_threat_modeling_cwe_capec_mitre.md # Manuscrito #02: Ontologias de ameaças
+│   └── 03_modular_framework_orchestration.md # Manuscrito #03: Arquitetura modular federada
 ├── scripts/
 │   ├── enrich_threat_modeling_graph.py      # Script de povoamento e ligações cross-framework
-│   ├── test_threat_hop.py                   # Teste de 1 salto semântico no grafo de ameaças
-│   └── sync_react_changes.py                # Sincronização com o Template_React
+│   ├── load_atlas.py                        # Povoamento do MITRE ATLAS (AI/ML)
+│   ├── test_modular_traversal.py            # Execução de travessia modular (Meta-Router + Templates)
+│   └── sync_react_changes.py                # Sincronização com o repositório Template_React
 └── src/
-    └── graph_search/         # Algoritmos de busca em grafos
+    ├── frameworks/           # Motor Modular (MetaRouter, ScopedExplorer, Templates, Orchestrator)
+    └── graph_search/         # Algoritmos de busca em grafos (A*, Beam Search)
 ```
 
 ---
@@ -59,7 +60,7 @@ O Neo4j contém a integração das principais ontologias técnicas de segurança
 ### Pré-requisitos
 * Python 3.10+
 * Instância ativa do Neo4j (`bolt://localhost:7687`)
-* Chave de API da TypeSafe AI (`API_JEV`)
+* Chave de API da TypeSafe AI (`API_JEV` ou `TYPESAFE_API_KEY`)
 
 ### Passos:
 ```bash
@@ -77,17 +78,16 @@ cp .env.example .env
 
 ---
 
-## 5. Executar o Visualizador Interativo
+## 5. Testes e Execução da Travessia Modular
 
 ```bash
-streamlit run app/graph_ui.py
+python scripts/test_modular_traversal.py
 ```
-Acesse a aplicação no navegador em **`http://localhost:8501`**.
 
 ---
 
-## 6. Versão Full-Stack (React 19 + TypeScript + Express)
+## 6. Interface Visual e Aplicação Full-Stack (React 19 + TypeScript + Express)
 
-Para a versão full-stack com React e Express (disponível no repositório `Template_React`):
-* **Frontend:** `http://localhost:5173` (Vite, React 19, vis-network, TanStack Query)
+A interface de utilizador do projeto é mantida no repositório **[`Template_React`](https://github.com/pauloribeiro16/Template_React)**:
+* **Frontend:** `http://localhost:5173` (Vite, React 19, vis-network, TanStack Query, shadcn/ui)
 * **Backend:** `http://localhost:3000` (Express, neo4j-driver, TypeSafe SDK)
