@@ -31,21 +31,31 @@ def export_canonical_graph() -> Path:
         "ATLAS": "#E11D48",      # Pink
     }
 
+    import re
+
+    def clean_text(text: str) -> str:
+        if not text:
+            return ""
+        cleaned = re.sub(r"<[^>]+>", "", text)
+        cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
+        return cleaned.strip()
+
     # 1. Collect all Nodes
     for s in (store.cwe, store.capec, store.attack, store.d3fend, store.atlas):
         fw = s.framework_name.replace("&", "")
         for eid, e in s.entities.items():
             if eid not in seen_nodes:
                 seen_nodes.add(eid)
+                clean_desc = clean_text(e.description)
                 nodes.append({
                     "id": eid,
                     "label": f"{eid}\n({fw})",
-                    "title": f"<b>{eid} - {e.name}</b><br><br>{e.description[:350]}...",
+                    "title": f"{eid} - {e.name}\n\n{clean_desc[:350]}..." if clean_desc else f"{eid} - {e.name}",
                     "group": fw,
                     "color": colors.get(fw, "#64748B"),
                     "name": e.name,
                     "category": e.category,
-                    "description": e.description,
+                    "description": clean_desc,
                     "metadata": e.metadata
                 })
 
