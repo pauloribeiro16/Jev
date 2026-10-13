@@ -30,54 +30,103 @@ class MetaRouter:
         "STAY_LOCAL": "Continue traversing within current framework for deeper refinement"
     }
 
-    def __init__(self, client: TypeSafeClient, driver: GraphDatabase.driver):
+    def __init__(
+        self,
+        client: TypeSafeClient,
+        driver: Optional[GraphDatabase.driver] = None,
+        store: Optional[Any] = None
+    ):
         self.client = client
         self.driver = driver
+        if store is None and driver is None:
+            from .stores import FederatedStore
+            self.store = FederatedStore.get_instance()
+        else:
+            self.store = store
 
     def detect_node_framework(self, node_id: str) -> str:
         """Determines the primary framework label of the node."""
-        if node_id.startswith("CAPEC-"):
+        if self.store is not None:
+            fw = self.store.detect_framework(node_id)
+            if fw != "UNKNOWN":
+                return fw
+
+        norm = node_id.strip().upper()
+        if norm.startswith("CAPEC-"):
             return "CAPEC"
-        elif node_id.startswith("CWE-"):
+        elif norm.startswith("CWE-") or (norm.isdigit() and len(norm) <= 4):
             return "CWE"
-        elif node_id.startswith("AML.T"):
+        elif norm.startswith("AML.T"):
             return "ATLAS"
-        elif node_id.startswith("T") and any(char.isdigit() for char in node_id):
+        elif norm.startswith("T") and any(char.isdigit() for char in norm):
             return "ATTACK"
-        elif node_id.startswith("D3-") or node_id.startswith("D3A-"):
+        elif norm.startswith("D3-") or norm.startswith("D3A-"):
             return "D3FEND"
-        elif node_id.startswith("D-"):
+        elif norm.startswith("D-"):
             return "SubDomain"
 
-        with self.driver.session() as s:
-            rec = s.run("""
-                MATCH (n)
-                WHERE coalesce(n.capecId, n.cweId, n.attackId, n.d3fendId, n.subDomainId, n.atlasId, n.id) = $nid
-                RETURN labels(n)[0] AS lbl
-            """, nid=node_id).single()
-            if rec and rec["lbl"]:
-                return rec["lbl"]
+        if self.driver is not None:
+            try:
+                with self.driver.session() as s:
+                    rec = s.run("""
+                        MATCH (n)
+                        WHERE coalesce(n.capecId, n.cweId, n.attackId, n.d3fendId, n.subDomainId, n.atlasId, n.id) = $nid
+                        RETURN labels(n)[0] AS lbl
+                    """, nid=node_id).single()
+                    if rec and rec["lbl"]:
+                        return rec["lbl"]
+            except Exception:
+                pass
         return "UNKNOWN"
 
     def get_candidate_frameworks(self, current_node_id: str, current_framework: str) -> Dict[str, str]:
         """Identifies which frameworks have direct bridge edges from the current node."""
         candidates = {"STAY_LOCAL": f"Continue refining within {current_framework}"}
 
-        cypher = """
-        MATCH (curr)
-        WHERE coalesce(curr.capecId, curr.cweId, curr.attackId, curr.d3fendId, curr.atlasId, curr.subDomainId, curr.id) = $nid
-        MATCH (curr)-[r]-(neighbor)
-        WITH DISTINCT labels(neighbor)[0] AS n_lbl
-        WHERE n_lbl IN ['CAPEC', 'CWE', 'ATTACK', 'ATLAS', 'D3FEND'] AND n_lbl <> $cur_lbl
-        RETURN collect(n_lbl) AS bridge_frameworks
-        """
-        with self.driver.session() as s:
-            rec = s.run(cypher, nid=current_node_id, cur_lbl=current_framework).single()
-            if rec and rec["bridge_frameworks"]:
-                for fw in rec["bridge_frameworks"]:
+        # 1. High-speed lookup using in-memory FederatedStore
+        if self.store is not None:
+            norm_id = current_node_id.strip().upper()
+            bridges = self.store.crosswalk.bridges.get(norm_id, [])
+            for b in bridges:
+                fw = self.store.detect_framework(b.target_id)
+                if fw != "UNKNOWN" and fw != current_framework:
                     candidates[fw] = self.FRAMEWORK_DESCRIPTIONS.get(fw, f"Consult {fw} framework")
 
-        # If reaching defense is the ultimate target and we are near D3FEND
+            # Fallback domain-level transitions based on taxonomy
+            if current_framework == "CWE" and self.store.cwe.get_capec_bridges(norm_id):
+                candidates["CAPEC"] = self.FRAMEWORK_DESCRIPTIONS["CAPEC"]
+            elif current_framework == "CAPEC":
+                if self.store.capec.get_attack_bridges(norm_id):
+                    candidates["ATTACK"] = self.FRAMEWORK_DESCRIPTIONS["ATTACK"]
+                if self.store.capec.get_cwe_bridges(norm_id):
+                    candidates["CWE"] = self.FRAMEWORK_DESCRIPTIONS["CWE"]
+            elif current_framework in ("ATTACK", "ATT&CK"):
+                if self.store.d3fend.get_mitigations_for_attack(norm_id):
+                    candidates["D3FEND"] = "Consult D3FEND defensive countermeasures (Primary Mitigation Target)"
+
+            if "D3FEND" in candidates:
+                candidates["D3FEND"] = "Consult D3FEND defensive countermeasures (Primary Mitigation Target)"
+            return candidates
+
+        # 2. Fallback to Neo4j Cypher query
+        if self.driver is not None:
+            cypher = """
+            MATCH (curr)
+            WHERE coalesce(curr.capecId, curr.cweId, curr.attackId, curr.d3fendId, curr.atlasId, curr.subDomainId, curr.id) = $nid
+            MATCH (curr)-[r]-(neighbor)
+            WITH DISTINCT labels(neighbor)[0] AS n_lbl
+            WHERE n_lbl IN ['CAPEC', 'CWE', 'ATTACK', 'ATLAS', 'D3FEND'] AND n_lbl <> $cur_lbl
+            RETURN collect(n_lbl) AS bridge_frameworks
+            """
+            try:
+                with self.driver.session() as s:
+                    rec = s.run(cypher, nid=current_node_id, cur_lbl=current_framework).single()
+                    if rec and rec["bridge_frameworks"]:
+                        for fw in rec["bridge_frameworks"]:
+                            candidates[fw] = self.FRAMEWORK_DESCRIPTIONS.get(fw, f"Consult {fw} framework")
+            except Exception:
+                pass
+
         if "D3FEND" in candidates:
             candidates["D3FEND"] = "Consult D3FEND defensive countermeasures (Primary Mitigation Target)"
 

@@ -24,21 +24,34 @@ class ModularOrchestrator:
         neo4j_uri: Optional[str] = None,
         neo4j_user: Optional[str] = None,
         neo4j_password: Optional[str] = None,
-        jev_api_key: Optional[str] = None
+        jev_api_key: Optional[str] = None,
+        store: Optional[Any] = None,
+        use_neo4j: bool = False
     ):
-        self.uri = neo4j_uri or os.getenv("NEO4J_URI", "bolt://localhost:7687")
-        self.user = neo4j_user or os.getenv("NEO4J_USER", "neo4j")
-        self.password = neo4j_password or os.getenv("NEO4J_PASSWORD")
-        self.api_key = jev_api_key or os.getenv("API_JEV") or os.getenv("TYPESAFE_API_KEY")
-
-        self.driver = GraphDatabase.driver(self.uri, auth=(self.user, self.password))
+        from .stores import FederatedStore
+        self.store = store or FederatedStore.get_instance()
+        self.api_key = jev_api_key or os.getenv("API_JEV") or os.getenv("TYPESAFE_API_KEY") or "mock-key"
         self.client = TypeSafeClient(api_key=self.api_key)
 
-        self.meta_router = MetaRouter(self.client, self.driver)
-        self.scoped_explorer = ScopedExplorer(self.client, self.driver)
+        self.driver = None
+        if use_neo4j:
+            try:
+                self.uri = neo4j_uri or os.getenv("NEO4J_URI", "bolt://localhost:7687")
+                self.user = neo4j_user or os.getenv("NEO4J_USER", "neo4j")
+                self.password = neo4j_password or os.getenv("NEO4J_PASSWORD")
+                self.driver = GraphDatabase.driver(self.uri, auth=(self.user, self.password))
+            except Exception:
+                self.driver = None
+
+        self.meta_router = MetaRouter(self.client, driver=self.driver, store=self.store)
+        self.scoped_explorer = ScopedExplorer(self.client, driver=self.driver, store=self.store)
 
     def close(self):
-        self.driver.close()
+        if self.driver is not None:
+            try:
+                self.driver.close()
+            except Exception:
+                pass
 
     def execute_hop(
         self,
