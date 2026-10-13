@@ -14,6 +14,8 @@ import streamlit.components.v1 as components
 from neo4j import GraphDatabase
 from typesafe_sdk import TypeSafeClient, Choice, Noul, Score
 
+from src.frameworks.orchestrator import ModularOrchestrator
+
 load_dotenv()
 
 st.set_page_config(
@@ -70,6 +72,16 @@ def get_neo4j_driver():
 
 def get_jev_client():
     return TypeSafeClient(api_key=JEV_API_KEY)
+
+
+@st.cache_resource
+def get_modular_orchestrator():
+    return ModularOrchestrator(
+        neo4j_uri=NEO4J_URI,
+        neo4j_user=NEO4J_USER,
+        neo4j_password=NEO4J_PASSWORD,
+        jev_api_key=JEV_API_KEY
+    )
 
 
 def fetch_graph_statistics():
@@ -218,99 +230,144 @@ if "view_hop_idx" not in st.session_state:
 
 
 def execute_single_hop():
-    """Runs 1 single hop in the traversal."""
+    """Runs 1 single hop in the traversal using either Modular or Monolithic engine."""
     if st.session_state.goal_achieved:
         return
 
     curr = st.session_state.current_node
     path = st.session_state.traversed_path
-    
-    # 1. Fetch from Neo4j
-    neighbors, cypher_q, params, db_time = query_neighbors(curr, visited_ids=path)
-    
-    if not neighbors:
-        st.warning(f"No further unvisited branches available from '{curr}'. Traversal ended.")
-        return
+    mode = st.session_state.get("engine_mode", "Modular")
 
-    # 2. Formulate Options for Jev Choice
-    criteria_options = {}
-    option_map = {}
-    for idx, n in enumerate(neighbors):
-        opt_key = f"branch_{idx+1}"
-        direction_arrow = "to" if n["direction"] == "OUTGOING" else "from"
-        opt_desc = (
-            f"Relationship [{n['rel_type']}] {direction_arrow} [{n['neighbor_label']}] "
-            f"'{n['neighbor_name']}' ({n['neighbor_id']}): {n['neighbor_desc'][:120]}"
-        )
-        criteria_options[opt_key] = opt_desc
-        option_map[opt_key] = n
+    if mode.startswith("Modular"):
+        orchestrator = get_modular_orchestrator()
+        result = orchestrator.execute_hop(curr, path, search_goal_input)
 
-    # 3. Payload for Jev
-    state_payload = {
-        "user_goal": search_goal_input,
-        "current_node": curr,
-        "traversed_path": " -> ".join(path),
-        "available_branches": criteria_options
-    }
+        if not result or result.get("status") == "dead-end":
+            st.warning(f"No further unvisited branches available from '{curr}' in the selected scope.")
+            return
 
-    questions_payload = {
-        "goal_reached": Noul(
-            instructions=f"Does the current node '{curr}' directly satisfy, solve, or answer the user goal: '{search_goal_input}'?"
-        ),
-        "best_next_step": Choice(
-            instructions=f"Given the user goal '{search_goal_input}', which branch is the most relevant path to follow?",
-            criteria=criteria_options
-        ),
-        "heuristic_score": Score(
-            instructions=f"How promising and semantically aligned is this current state with the goal '{search_goal_input}'?",
-            criteria=["not aligned", "moderately aligned", "highly aligned", "critically aligned"]
-        )
-    }
+        l1 = result["level_1_router"]
+        l2 = result["level_2_explorer"]
 
-    # 4. Call Jev
-    client = get_jev_client()
-    jev_start = time.time()
-    response = client.system_one(state=state_payload, questions=questions_payload)
-    jev_time = (time.time() - jev_start) * 1000
-
-    noul_val = response.nouls["goal_reached"].noul
-    choice_val = response.choices["best_next_step"].choice
-    score_val = response.scores["heuristic_score"].score
-
-    # Save to history log for full transparency
-    step_record = {
-        "hop": len(path),
-        "current_node": curr,
-        "cypher_query": cypher_q,
-        "cypher_params": params,
-        "cypher_time_ms": db_time,
-        "neighbors_found": neighbors,
-        "jev_state": state_payload,
-        "jev_questions": {
-            "goal_reached": questions_payload["goal_reached"].instructions,
-            "best_next_step": questions_payload["best_next_step"].instructions,
-            "best_next_step_criteria": criteria_options,
-            "heuristic_score": questions_payload["heuristic_score"].instructions,
-        },
-        "jev_response": {
-            "noul_goal": noul_val,
-            "choice_step": choice_val,
-            "score_heuristic": score_val,
-            "latency_ms": jev_time
+        step_record = {
+            "mode": "Modular",
+            "hop": len(path),
+            "current_node": curr,
+            "next_node": result["next_node"],
+            "next_node_label": result["next_node_label"],
+            "next_node_name": result["next_node_name"],
+            "cypher_query": l2["cypher_query"],
+            "cypher_params": l2["cypher_params"],
+            "cypher_time_ms": l2["db_time_ms"],
+            "neighbors_found": l2.get("neighbors", []),
+            "level_1_router": l1,
+            "level_2_explorer": l2,
+            "jev_state": l2["jev_state"],
+            "jev_questions": l2["jev_questions"],
+            "jev_response": {
+                "noul_goal": l2["noul_goal"],
+                "choice_step": l2["chosen_branch_key"],
+                "score_heuristic": l2["heuristic_score"],
+                "latency_ms": result["total_latency_ms"]
+            }
         }
-    }
-    st.session_state.history_log.append(step_record)
-    st.session_state.view_hop_idx = len(st.session_state.history_log) - 1
+        st.session_state.history_log.append(step_record)
+        st.session_state.view_hop_idx = len(st.session_state.history_log) - 1
 
-    # 5. Check Goal
-    if noul_val >= 0.70:
-        st.session_state.goal_achieved = True
-    else:
-        if choice_val in option_map:
-            next_node_obj = option_map[choice_val]
-            next_id = next_node_obj["neighbor_id"]
+        if result["goal_reached"]:
+            st.session_state.goal_achieved = True
+        else:
+            next_id = result["next_node"]
             st.session_state.current_node = next_id
             st.session_state.traversed_path.append(next_id)
+    else:
+        # 1. Fetch from Neo4j (Monolithic Baseline)
+        neighbors, cypher_q, params, db_time = query_neighbors(curr, visited_ids=path)
+        
+        if not neighbors:
+            st.warning(f"No further unvisited branches available from '{curr}'. Traversal ended.")
+            return
+
+        # 2. Formulate Options for Jev Choice
+        criteria_options = {}
+        option_map = {}
+        for idx, n in enumerate(neighbors):
+            opt_key = f"branch_{idx+1}"
+            direction_arrow = "to" if n["direction"] == "OUTGOING" else "from"
+            opt_desc = (
+                f"Relationship [{n['rel_type']}] {direction_arrow} [{n['neighbor_label']}] "
+                f"'{n['neighbor_name']}' ({n['neighbor_id']}): {n['neighbor_desc'][:120]}"
+            )
+            criteria_options[opt_key] = opt_desc
+            option_map[opt_key] = n
+
+        # 3. Payload for Jev
+        state_payload = {
+            "user_goal": search_goal_input,
+            "current_node": curr,
+            "traversed_path": " -> ".join(path),
+            "available_branches": criteria_options
+        }
+
+        questions_payload = {
+            "goal_reached": Noul(
+                instructions=f"Does the current node '{curr}' directly satisfy, solve, or answer the user goal: '{search_goal_input}'?"
+            ),
+            "best_next_step": Choice(
+                instructions=f"Given the user goal '{search_goal_input}', which branch is the most relevant path to follow?",
+                criteria=criteria_options
+            ),
+            "heuristic_score": Score(
+                instructions=f"How promising and semantically aligned is this current state with the goal '{search_goal_input}'?",
+                criteria=["not aligned", "moderately aligned", "highly aligned", "critically aligned"]
+            )
+        }
+
+        # 4. Call Jev
+        client = get_jev_client()
+        jev_start = time.time()
+        response = client.system_one(state=state_payload, questions=questions_payload)
+        jev_time = (time.time() - jev_start) * 1000
+
+        noul_val = response.nouls["goal_reached"].noul
+        choice_val = response.choices["best_next_step"].choice
+        score_val = response.scores["heuristic_score"].score
+
+        # Save to history log for full transparency
+        step_record = {
+            "mode": "Monolithic",
+            "hop": len(path),
+            "current_node": curr,
+            "cypher_query": cypher_q,
+            "cypher_params": params,
+            "cypher_time_ms": db_time,
+            "neighbors_found": neighbors,
+            "jev_state": state_payload,
+            "jev_questions": {
+                "goal_reached": questions_payload["goal_reached"].instructions,
+                "best_next_step": questions_payload["best_next_step"].instructions,
+                "best_next_step_criteria": criteria_options,
+                "heuristic_score": questions_payload["heuristic_score"].instructions,
+            },
+            "jev_response": {
+                "noul_goal": noul_val,
+                "choice_step": choice_val,
+                "score_heuristic": score_val,
+                "latency_ms": jev_time
+            }
+        }
+        st.session_state.history_log.append(step_record)
+        st.session_state.view_hop_idx = len(st.session_state.history_log) - 1
+
+        # 5. Check Goal
+        if noul_val >= 0.70:
+            st.session_state.goal_achieved = True
+        else:
+            if choice_val in option_map:
+                next_node_obj = option_map[choice_val]
+                next_id = next_node_obj["neighbor_id"]
+                st.session_state.current_node = next_id
+                st.session_state.traversed_path.append(next_id)
 
 
 def auto_run_until_goal(max_steps=6):
@@ -324,6 +381,15 @@ def auto_run_until_goal(max_steps=6):
 # --- Sidebar ---
 st.sidebar.title("🛡️ Threat Intelligence Explorer")
 st.sidebar.markdown("**Jev (System 1) Probabilistic Graph Traversal**")
+
+# Engine Mode Selector
+engine_choice = st.sidebar.radio(
+    "Architecture Engine:",
+    options=["Modular (Meta-Router + Domain Templates)", "Monolithic (Baseline Single Graph)"],
+    index=0,
+    help="Modular splits navigation into Level 1 (who to ask) and Level 2 (what to ask with specialized templates)."
+)
+st.session_state.engine_mode = engine_choice
 
 # Scenario Selector
 selected_scenario_name = st.sidebar.selectbox(
@@ -537,49 +603,106 @@ with right_col:
         
         target_step = st.session_state.history_log[selected_hop_num - 1]
         
-        # Tabs for selected hop
-        tab_neo4j, tab_jev_state, tab_jev_res = st.tabs([
-            f"1. Neo4j Cypher ({target_step['cypher_time_ms']:.1f}ms)",
-            "2. Jev State & Questions",
-            f"3. Jev Decision ({target_step['jev_response']['latency_ms']:.1f}ms)"
-        ])
+        is_modular = target_step.get("mode") == "Modular"
 
-        with tab_neo4j:
-            st.markdown("**Executed Cypher Query:**")
-            st.code(target_step["cypher_query"], language="cypher")
-            st.markdown(f"**Parameters:** `{json.dumps(target_step['cypher_params'])}`")
-            st.markdown(f"**Neighbors Found:** {len(target_step['neighbors_found'])}")
-            
-            for i, n in enumerate(target_step["neighbors_found"], 1):
-                arrow = "➔" if n["direction"] == "OUTGOING" else "⬅"
-                st.markdown(
-                    f"**[{i}]** {arrow} `:{n['rel_type']}` ➜ **{n['neighbor_label']}** (`{n['neighbor_id']}`): *{n['neighbor_name']}*"
-                )
-
-        with tab_jev_state:
-            st.markdown("**1. State Payload Sent to Jev:**")
-            st.json(target_step["jev_state"])
-            
-            st.markdown("**2. Questions Formulated:**")
-            st.markdown(f"- **Goal Check (`Noul`):** {target_step['jev_questions']['goal_reached']}")
-            st.markdown(f"- **Routing (`Choice`):** {target_step['jev_questions']['best_next_step']}")
-            st.markdown(f"- **Heuristic (`Score`):** {target_step['jev_questions']['heuristic_score']}")
-
-        with tab_jev_res:
+        if is_modular:
+            l1 = target_step["level_1_router"]
+            l2 = target_step["level_2_explorer"]
             res = target_step["jev_response"]
-            m_col1, m_col2, m_col3 = st.columns(3)
-            m_col1.metric("Goal Confidence (Noul)", f"{res['noul_goal']:.0%}")
-            m_col2.metric("Chosen Branch", res["choice_step"])
-            m_col3.metric("Alignment Score", f"{res['score_heuristic']}")
 
-            # Progress bar for Noul Goal
-            st.markdown("**Goal Reached Probability:**")
-            st.progress(min(1.0, float(res["noul_goal"])))
+            st.markdown(
+                f"""<div style="background-color: #1E293B; padding: 10px 14px; border-radius: 8px; border-left: 4px solid #10B981; margin-bottom: 12px;">
+                    <span style="color: #10B981; font-weight: bold;">🧩 Two-Level Modular Hierarchy Active</span><br/>
+                    <small>Level 1 (Meta-Router): <b>{l1['current_framework']} ➔ {l1['target_framework']}</b> | Level 2 (Domain Template): <b>{l2['template_used']}</b></small>
+                </div>""",
+                unsafe_allow_html=True
+            )
 
-            if res["noul_goal"] >= 0.70:
-                st.success(f"Goal Reached! Target node: `{target_step['current_node']}`")
-            else:
-                st.info(f"Decision: Follow `{res['choice_step']}` to next node.")
+            tab_router, tab_explorer, tab_decision = st.tabs([
+                f"1. Meta-Router ({l1['latency_ms']:.1f}ms)",
+                f"2. Domain Template ({l2['jev_time_ms']:.1f}ms)",
+                f"3. Decision & Hop ({res['latency_ms']:.1f}ms)"
+            ])
+
+            with tab_router:
+                st.markdown(f"**Current Framework:** `{l1['current_framework']}` ➔ **Target Framework:** `{l1['target_framework']}`")
+                st.markdown(f"**Router Decision:** `{l1['router_decision']}` (Phase Alignment Score: `{l1.get('phase_score', 'N/A')}`)")
+                st.markdown("**Bridge Framework Candidates Evaluated:**")
+                st.json(l1["candidates"])
+                if "jev_questions" in l1:
+                    st.markdown("**Meta-Router Questions Formulated:**")
+                    st.json(l1["jev_questions"])
+
+            with tab_explorer:
+                st.markdown(f"**Active Template:** `{l2['template_used']}`")
+                st.markdown(f"**Scoped Cypher Query ({l2['db_time_ms']:.1f}ms):**")
+                st.code(target_step["cypher_query"], language="cypher")
+                st.markdown(f"**Candidates within Scope ({l2['neighbors_count']}):**")
+                for i, n in enumerate(target_step["neighbors_found"], 1):
+                    arrow = "➔" if n["direction"] == "OUTGOING" else "⬅"
+                    st.markdown(
+                        f"**[{i}]** {arrow} `:{n['rel_type']}` ➜ **{n['neighbor_label']}** (`{n['neighbor_id']}`): *{n['neighbor_name']}*"
+                    )
+                st.markdown("**Domain-Calibrated Questions:**")
+                st.json(l2["jev_questions"])
+
+            with tab_decision:
+                m_col1, m_col2, m_col3 = st.columns(3)
+                m_col1.metric("Goal Confidence (Noul)", f"{res['noul_goal']:.0%}")
+                m_col2.metric("Chosen Branch", res["choice_step"])
+                m_col3.metric("Alignment Score", f"{res['score_heuristic']}")
+
+                st.markdown("**Goal Reached Probability:**")
+                st.progress(min(1.0, float(res["noul_goal"])))
+
+                if res["noul_goal"] >= 0.70:
+                    st.success(f"🎯 **Goal Reached!** Target node: `{target_step['current_node']}`")
+                else:
+                    st.info(f"➡️ **Decision:** Advance via `{res['choice_step']}` to `{target_step.get('next_node', '')}`.")
+        else:
+            # Monolithic baseline view
+            tab_neo4j, tab_jev_state, tab_jev_res = st.tabs([
+                f"1. Neo4j Cypher ({target_step['cypher_time_ms']:.1f}ms)",
+                "2. Jev State & Questions",
+                f"3. Jev Decision ({target_step['jev_response']['latency_ms']:.1f}ms)"
+            ])
+
+            with tab_neo4j:
+                st.markdown("**Executed Cypher Query:**")
+                st.code(target_step["cypher_query"], language="cypher")
+                st.markdown(f"**Parameters:** `{json.dumps(target_step['cypher_params'])}`")
+                st.markdown(f"**Neighbors Found:** {len(target_step['neighbors_found'])}")
+                
+                for i, n in enumerate(target_step["neighbors_found"], 1):
+                    arrow = "➔" if n["direction"] == "OUTGOING" else "⬅"
+                    st.markdown(
+                        f"**[{i}]** {arrow} `:{n['rel_type']}` ➜ **{n['neighbor_label']}** (`{n['neighbor_id']}`): *{n['neighbor_name']}*"
+                    )
+
+            with tab_jev_state:
+                st.markdown("**1. State Payload Sent to Jev:**")
+                st.json(target_step["jev_state"])
+                
+                st.markdown("**2. Questions Formulated:**")
+                st.markdown(f"- **Goal Check (`Noul`):** {target_step['jev_questions']['goal_reached']}")
+                st.markdown(f"- **Routing (`Choice`):** {target_step['jev_questions']['best_next_step']}")
+                st.markdown(f"- **Heuristic (`Score`):** {target_step['jev_questions']['heuristic_score']}")
+
+            with tab_jev_res:
+                res = target_step["jev_response"]
+                m_col1, m_col2, m_col3 = st.columns(3)
+                m_col1.metric("Goal Confidence (Noul)", f"{res['noul_goal']:.0%}")
+                m_col2.metric("Chosen Branch", res["choice_step"])
+                m_col3.metric("Alignment Score", f"{res['score_heuristic']}")
+
+                # Progress bar for Noul Goal
+                st.markdown("**Goal Reached Probability:**")
+                st.progress(min(1.0, float(res["noul_goal"])))
+
+                if res["noul_goal"] >= 0.70:
+                    st.success(f"Goal Reached! Target node: `{target_step['current_node']}`")
+                else:
+                    st.info(f"Decision: Follow `{res['choice_step']}` to next node.")
 
 st.markdown("---")
 
@@ -589,9 +712,15 @@ if st.session_state.history_log:
     summary_data = []
     for step in st.session_state.history_log:
         res = step["jev_response"]
+        fw_col = (
+            f"{step['level_1_router']['target_framework']} ({step['level_2_explorer']['template_used']})"
+            if step.get("mode") == "Modular"
+            else "Monolithic"
+        )
         summary_data.append({
             "Hop #": step["hop"],
             "Current Node": step["current_node"],
+            "Framework / Template": fw_col,
             "Goal Confidence (Noul)": f"{res['noul_goal']:.0%}",
             "Jev Choice": res["choice_step"],
             "Heuristic Score": f"{res['score_heuristic']}",
