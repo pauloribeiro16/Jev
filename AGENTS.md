@@ -53,10 +53,14 @@ with TypeSafeClient() as client:
 ## 3. Áreas de Foco e Casos de Uso no Repositório
 
 ### A. Procura e Travessia em Grafos (Graph Search & Heuristics)
+* **Cadeia Ontológica Completa e Sequencial:**
+  * O raciocínio e a travessia devem cobrir a sequência completa do domínio de cibersegurança, não saltando nem focando apenas nos extremos:
+    $$\text{Cenário/Incidente} \longrightarrow \text{CWE (Fraqueza)} \longrightarrow \text{CAPEC (Padrão de Ataque)} \longrightarrow \text{ATT\&CK / ATLAS (Técnica/TTP)} \longrightarrow \text{D3FEND (Defesa)}$$
+  * Em cada transição semântica, o Jev avalia a coerência da transição e seleciona o ramo com base no estado acumulado do sistema.
 * **Função Heurística em Algoritmos Informados (A*, Best-First, Beam Search):**
-  * Utilizar `Score` para calcular dinamicamente o valor heurístico $h(n)$ de nós semânticos.
+  * Utilizar `Score` para calcular dinamicamente o valor heurístico $h(n)$ de nós semânticos ao longo de toda a cadeia.
 * **Poda e Seleção de Arestas (`Choice`):**
-  * Em grafos densos (como ontologias ou bases de conhecimento tipo Neo4j / Knowledge Graphs), selecionar os ramos mais promissores a expandir.
+  * Em grafos densos (como ontologias ou bases de conhecimento tipo Neo4j / Knowledge Graphs), selecionar os ramos mais promissores a expandir em cada salto.
 * **Critério de Paragem / Meta (`Noul`):**
   * Avaliar se um nó ou caminho atual atinge as condições pretendidas antes de continuar a travessia.
 * **Ponderação Dinâmica de Arestas:**
@@ -91,7 +95,9 @@ with TypeSafeClient() as client:
 
 ## 5. Diretrizes para Agentes de IA que Trabalhem neste Repo
 
-1. **Separação de Responsabilidades:** Manter a lógica determinística dos grafos (estruturas de dados, fila de prioridade, nós, arestas) em código Python puro; usar o Jev exclusivamente para os micro-julgamentos probabilísticos.
-2. **Tratamento de Mocks:** Sempre que desenvolver testes ou scripts executáveis sem uma chave de API ativa, providenciar mecanismos de fallback ou mocks do `TypeSafeClient` para validação de pipeline offline.
-3. **Métricas de Desempenho:** Sempre que implementar um algoritmo de busca, medir o tempo por expansão de nó e comparar com abordagens puramente simbólicas ou com LLMs convencionais.
-4. **Formulação Clara de Questões:** Manter os prompts e critérios de `Noul`, `Choice` e `Score` curtos, objetivos e bem calibrados para maximizar a precisão do modelo System 1.
+1. **Espírito Crítico e Debate Técnico (Não ser bajulador / sycophant):** O agente de IA **NUNCA deve concordar passivamente** com todas as ideias ou pedidos do utilizador. Deve questionar suposições frágeis, apontar contradições, sugerir abordagens tecnicamente superiores e alertar para desvios de foco ou limitações práticas.
+2. **Cobertura Sequencial Completa:** Nunca isolar apenas CWE ou D3FEND. Os testes e pipelines devem exercitar a cadeia ontológica de ponta a ponta (`CWE` $\rightarrow$ `CAPEC` $\rightarrow$ `ATT&CK/ATLAS` $\rightarrow$ `D3FEND`), testando o Jev em cada transição e mantendo o contexto rico acumulado.
+3. **Separação de Responsabilidades:** Manter a lógica determinística dos grafos (estruturas de dados, fila de prioridade, nós, arestas) em código Python puro; usar o Jev exclusivamente para os micro-julgamentos probabilísticos.
+4. **Tratamento de Mocks:** Sempre que desenvolver testes ou scripts executáveis sem uma chave de API ativa, providenciar mecanismos de fallback ou mocks do `TypeSafeClient` para validação de pipeline offline.
+5. **Métricas de Desempenho:** Sempre que implementar um algoritmo de busca, medir o tempo por expansão de nó e comparar com abordagens puramente simbólicas ou com LLMs convencionais.
+6. **Formulação Clara e Grounded de Questões:** Manter os prompts e critérios de `Noul`, `Choice` e `Score` curtos, objetivos, tecnicamente fundamentados (sem perguntas vagas/filosóficas) e bem calibrados para maximizar a precisão do modelo System 1.

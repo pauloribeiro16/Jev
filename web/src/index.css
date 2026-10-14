@@ -1,0 +1,511 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  /* Jev aliases onto the template's shadcn token names. */
+  --color-bg: var(--background);
+  --color-surface: var(--card);
+  --color-raised: var(--popover);
+  --color-ink: var(--foreground);
+  --color-dim: var(--muted-foreground);
+  --color-faint: var(--faint);
+  --color-line: var(--border);
+  --color-focus: var(--ring);
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+}
+
+:root {
+  --radius: 0.5rem;
+  /* Cold blue-slate rather than neutral near-black: Anthropic's frontend-design
+     skill names "#0B0B0B, #111 standing in for black" as template chrome. */
+  --background: #0e1620;
+  --foreground: #e6e9ef;
+  --card: #16202c;
+  --card-foreground: #e6e9ef;
+  --popover: #1e2937;
+  --popover-foreground: #e6e9ef;
+  --primary: #7cc4ff;
+  --primary-foreground: #0e1620;
+  --secondary: #1e2937;
+  --secondary-foreground: #e6e9ef;
+  --muted: #1e2937;
+  /* #8896ad, not #6b7688: the old value measured 3.59:1 on --card and failed
+     WCAG 2.2 SC 1.4.3 (4.5:1) at the 10-12px sizes it is used for. */
+  --muted-foreground: #a3b0c4;
+  --faint: #8896ad;
+  --accent: #243044;
+  --accent-foreground: #e6e9ef;
+  --destructive: #d55e00;
+  --border: #2b3a4d;
+  --input: #2b3a4d;
+  --ring: #7cc4ff;
+  /* Okabe-Ito, colourblind-separable. Shape is the redundant channel, so the
+     palette only has to stay distinguishable, not carry the load alone. */
+  --chart-1: #0072b2;  /* CWE */
+  --chart-2: #e69f00;  /* CAPEC */
+  --chart-3: #d55e00;  /* ATT&CK */
+  --chart-4: #009e73;  /* D3FEND */
+  --chart-5: #cc79a7;  /* ATLAS */
+  --sidebar: #16202c;
+  --sidebar-foreground: #e6e9ef;
+  --sidebar-primary: #7cc4ff;
+  --sidebar-primary-foreground: #0e1620;
+  --sidebar-accent: #1e2937;
+  --sidebar-accent-foreground: #e6e9ef;
+  --sidebar-border: #2b3a4d;
+  --sidebar-ring: #7cc4ff;
+  --warning: #e69f00;
+  --warning-foreground: #0e1620;
+
+  /* Framework colors */
+  --cwe: #0072b2;
+  --capec: #e69f00;
+  --attack: #d55e00;
+  --d3fend: #009e73;
+  --atlas: #cc79a7;
+  --focus: #7cc4ff;
+  --text-faint: #64748b;
+
+  /* WCAG 2.2 SC 2.5.8 Target Size (Minimum). */
+  --spacing-tap: 24px;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-family: var(--font-sans);
+    font-size: 14px;
+    line-height: 1.45;
+    -webkit-font-smoothing: antialiased;
+    margin: 0;
+  }
+  :focus-visible {
+    outline: 2px solid var(--color-focus);
+    outline-offset: 2px;
+  }
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--color-line);
+    border-radius: 5px;
+  }
+}
+
+@layer components {
+  .linkbtn {
+    @apply inline-flex items-center gap-1.5 rounded border border-line px-2.5 text-xs text-dim
+           transition-colors hover:text-ink hover:border-faint;
+    min-height: var(--spacing-tap);
+  }
+  code {
+    @apply rounded bg-raised px-1.5 py-0.5 font-mono text-xs;
+  }
+
+  /* =========================================================================
+     DECISION VIEW & TREE STYLES
+     ========================================================================= */
+  .decision-view-wrapper {
+    @apply w-full;
+  }
+  .decision-view {
+    @apply flex flex-col gap-5;
+  }
+  .decision-view__header {
+    @apply flex items-start justify-between border-b border-border pb-4;
+  }
+  .decision-view__title-group {
+    @apply flex flex-col gap-1;
+  }
+  .decision-view__badge-row {
+    @apply flex items-center gap-2;
+  }
+  .decision-view__badge {
+    @apply rounded-full bg-primary/15 text-primary border border-primary/30 px-2.5 py-0.5 text-xs font-semibold;
+  }
+  .decision-view__count-badge {
+    @apply rounded-full bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 px-2.5 py-0.5 text-xs font-medium;
+  }
+  .decision-view h2 {
+    @apply text-lg font-bold text-foreground mt-1;
+  }
+  .decision-view__subtitle {
+    @apply text-xs text-muted-foreground;
+  }
+  .decision-view__empty {
+    @apply rounded-xl border border-dashed border-border p-8 text-center text-sm text-muted-foreground space-y-2;
+  }
+
+  /* Family filter pills */
+  .family-filter-bar {
+    @apply rounded-xl border border-border bg-card p-4 space-y-2.5;
+  }
+  .family-filter-bar__label {
+    @apply text-xs font-semibold uppercase tracking-wider text-muted-foreground flex items-center gap-1.5;
+  }
+  .family-filter-bar__pills {
+    @apply flex flex-wrap gap-2;
+  }
+  .family-pill {
+    @apply rounded-full border border-border bg-popover px-3 py-1 text-xs font-medium text-muted-foreground
+           transition-all hover:border-primary/50 hover:text-foreground cursor-pointer;
+  }
+  .family-pill.is-active {
+    @apply border-primary bg-primary text-primary-foreground font-semibold shadow-sm;
+  }
+
+  /* Scenario selector */
+  .scenario-bar {
+    @apply flex flex-col sm:flex-row sm:items-center gap-2.5 rounded-xl border border-border bg-card p-3;
+  }
+  .scenario-bar__label {
+    @apply text-xs font-semibold text-foreground whitespace-nowrap;
+  }
+  .scenario-bar__select {
+    @apply flex-1 rounded-lg border border-border bg-background px-3 py-1.5 text-xs text-foreground outline-none cursor-pointer;
+  }
+
+  /* Case Card */
+  .case-card {
+    @apply rounded-xl border border-border bg-card p-5 space-y-3.5;
+  }
+  .case-card__header {
+    @apply flex flex-col md:flex-row md:items-start justify-between gap-3;
+  }
+  .case-card__tag-row {
+    @apply flex items-center gap-2 mb-1;
+  }
+  .case-card__tag {
+    @apply rounded bg-primary/20 text-primary border border-primary/30 px-2 py-0.5 text-[11px] font-bold uppercase tracking-wider;
+  }
+  .case-card__subtag {
+    @apply rounded bg-popover text-muted-foreground border border-border px-2 py-0.5 text-[11px] font-medium;
+  }
+  .case-card__title {
+    @apply text-base font-bold text-foreground;
+  }
+  .case-card__stats {
+    @apply flex flex-wrap items-center gap-2 text-xs;
+  }
+  .stat-pill {
+    @apply inline-flex items-center gap-1.5 rounded-full border border-border bg-popover px-2.5 py-1 text-xs text-foreground;
+  }
+  .case-card__toggle {
+    @apply cursor-pointer font-medium text-primary hover:underline ml-1;
+  }
+  .case-card__details {
+    @apply border-t border-border/70 pt-3 space-y-2 text-xs;
+  }
+  .detail-row {
+    @apply grid grid-cols-1 sm:grid-cols-[140px_1fr] gap-1.5;
+  }
+  .detail-row strong {
+    @apply text-muted-foreground font-medium;
+  }
+  .detail-row span {
+    @apply text-foreground leading-relaxed;
+  }
+
+  /* Decision Tree Visual */
+  .decision-tree-panel {
+    @apply rounded-xl border border-border bg-card p-5 space-y-4 overflow-x-auto;
+  }
+  .decision-tree-panel__head {
+    @apply flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-border/70 pb-3;
+  }
+  .section-label {
+    @apply text-xs font-bold uppercase tracking-wider text-primary;
+  }
+  .decision-tree-panel__hint {
+    @apply text-xs text-muted-foreground;
+  }
+  .decision-tree {
+    @apply flex items-stretch gap-4 min-w-[850px] pb-2;
+  }
+  .tree-column {
+    @apply flex-1 min-w-[200px] flex flex-col rounded-xl border border-border bg-background/70 relative;
+  }
+  .tree-column__header {
+    @apply flex items-center justify-between px-3.5 py-2.5 rounded-t-xl border-b-2 bg-popover/80;
+  }
+  .tree-column__badge {
+    @apply rounded px-2 py-0.5 text-[11px] font-bold text-[#0b0f17];
+  }
+  .tree-column__step {
+    @apply text-[11px] font-mono text-muted-foreground;
+  }
+  .tree-column__nodes {
+    @apply p-3 flex flex-col gap-2.5 flex-1;
+  }
+  .tree-node {
+    @apply flex flex-col gap-1.5 p-2.5 rounded-lg border text-left cursor-pointer transition-all w-full;
+  }
+  .tree-node.is-winner {
+    @apply bg-primary/10 border-primary/80 shadow-[0_0_12px_rgba(124,196,255,0.18)] hover:bg-primary/15;
+  }
+  .tree-node.is-pruned {
+    @apply bg-card/60 border-dashed border-border/90 opacity-70 hover:opacity-100 hover:border-muted-foreground;
+  }
+  .tree-node.is-selected {
+    @apply ring-2 ring-primary ring-offset-2 ring-offset-background;
+  }
+  .tree-node__top {
+    @apply flex items-center justify-between gap-1;
+  }
+  .tree-node__id {
+    @apply font-mono text-xs font-bold text-foreground;
+  }
+  .tree-node__status {
+    @apply font-mono text-[11px] text-muted-foreground;
+  }
+  .tree-node__status.is-winner-tag {
+    @apply text-emerald-400 font-bold;
+  }
+  .tree-node__name {
+    @apply text-[11px] text-muted-foreground line-clamp-2 leading-tight;
+  }
+  .tree-column__connector {
+    @apply absolute -right-3.5 top-1/2 -translate-y-1/2 z-10 pointer-events-none;
+  }
+  .connector-arrow {
+    @apply flex items-center justify-center w-6 h-6 rounded-full bg-border text-foreground text-xs shadow-md;
+  }
+
+  /* Dual Inspector */
+  .dual-inspector {
+    @apply rounded-xl border border-border bg-card p-5 space-y-4;
+  }
+  .dual-inspector__head {
+    @apply space-y-2 border-b border-border/70 pb-4;
+  }
+  .dual-inspector__badge-row {
+    @apply flex items-center gap-2 flex-wrap;
+  }
+  .badge {
+    @apply rounded px-2 py-0.5 text-xs font-bold;
+  }
+  .status-pill {
+    @apply rounded-full px-2.5 py-0.5 text-xs font-semibold;
+  }
+  .status-pill--chosen {
+    @apply bg-emerald-500/20 text-emerald-400 border border-emerald-500/30;
+  }
+  .status-pill--pruned {
+    @apply bg-orange-500/20 text-orange-400 border border-orange-500/30;
+  }
+  .dual-inspector__title {
+    @apply text-lg font-bold text-foreground;
+  }
+  .dual-inspector__actions {
+    @apply flex items-center gap-2.5 pt-1;
+  }
+  .step-card__focusbtn {
+    @apply cursor-pointer;
+  }
+  .dual-inspector__link {
+    @apply text-primary hover:underline;
+  }
+  .dual-inspector__tabs {
+    @apply flex gap-1 p-1 rounded-lg bg-background border border-border w-fit;
+  }
+  .tab-btn {
+    @apply rounded-md px-3 py-1 text-xs font-medium text-muted-foreground transition-all cursor-pointer;
+  }
+  .tab-btn:hover {
+    @apply text-foreground;
+  }
+  .tab-btn.is-active {
+    @apply bg-card text-foreground font-semibold shadow-sm;
+  }
+  .inspector-box {
+    @apply rounded-xl border border-border bg-background/70 p-4 space-y-3.5;
+  }
+  .inspector-box__title {
+    @apply flex items-center justify-between text-xs font-bold text-foreground border-b border-border/60 pb-2.5;
+  }
+  .inspector-field {
+    @apply space-y-1.5;
+  }
+  .field-label {
+    @apply text-[11px] font-semibold uppercase tracking-wider text-muted-foreground;
+  }
+  .inspector-field__quote {
+    @apply rounded-r-lg border-l-2 border-primary bg-card/90 px-3.5 py-2.5 text-xs italic text-primary leading-relaxed;
+  }
+  .inspector-field__text {
+    @apply text-xs text-foreground leading-relaxed;
+  }
+  .step-card__verdicts {
+    @apply flex gap-2 flex-wrap;
+  }
+  .verdict-chip {
+    @apply inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-semibold;
+  }
+  .verdict-chip--noul {
+    @apply bg-emerald-500/20 text-emerald-300 border border-emerald-500/30;
+  }
+  .verdict-chip--score {
+    @apply bg-primary/20 text-primary border border-primary/30;
+  }
+  .verdict-chip__type {
+    @apply font-mono text-[11px] opacity-80;
+  }
+  .prob-list {
+    @apply space-y-2;
+  }
+  .prob-list__item {
+    @apply flex items-center gap-3 p-2 rounded-lg bg-card border border-border/80 cursor-pointer transition-all hover:border-primary/50;
+  }
+  .prob-list__item.is-highlight {
+    @apply border-primary bg-primary/10;
+  }
+  .prob-list__info {
+    @apply w-56 flex flex-col min-w-0;
+  }
+  .prob-list__id {
+    @apply font-mono text-xs font-bold text-foreground;
+  }
+  .prob-list__title {
+    @apply text-[11px] text-muted-foreground truncate;
+  }
+  .prob-list__bar-col {
+    @apply flex-1;
+  }
+  .prob-list__track {
+    @apply h-2 rounded-full bg-popover overflow-hidden border border-border/50;
+  }
+  .prob-list__fill {
+    @apply h-full rounded-full transition-all duration-300;
+  }
+  .prob-list__num {
+    @apply w-12 text-right font-mono text-xs font-semibold text-foreground;
+  }
+  .official-description {
+    @apply text-xs leading-relaxed text-foreground bg-card p-3.5 rounded-lg border border-border/70 whitespace-pre-wrap;
+  }
+  .official-link-box {
+    @apply flex flex-col gap-0.5 rounded-lg border border-border bg-card p-3 transition-colors hover:border-primary;
+  }
+  .official-link-box__title {
+    @apply text-xs font-semibold text-primary;
+  }
+  .official-link-box__url {
+    @apply font-mono text-[11px] text-muted-foreground truncate;
+  }
+
+  /* =========================================================================
+     TRACE PANEL STYLES
+     ========================================================================= */
+  .tracepanel-wrapper {
+    @apply w-full;
+  }
+  .tracepanel {
+    @apply space-y-4;
+  }
+  .tracepanel__summary {
+    @apply text-xs font-medium text-muted-foreground;
+  }
+  .call {
+    @apply rounded-xl border border-border bg-card p-4 space-y-3;
+  }
+  .call__head {
+    @apply flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-border/60 pb-2.5;
+  }
+  .call__meta {
+    @apply flex items-center gap-2;
+  }
+  .call__sec {
+    @apply space-y-2;
+  }
+  .probs {
+    @apply space-y-1.5;
+  }
+  .probs li {
+    @apply flex items-center gap-2 text-xs;
+  }
+  .probs li.is-picked {
+    @apply font-semibold text-primary;
+  }
+  .probs__key {
+    @apply w-64 flex flex-col min-w-0;
+  }
+  .probs__node {
+    @apply text-xs text-foreground truncate;
+  }
+  .probs__raw {
+    @apply text-[10px] font-mono text-muted-foreground;
+  }
+  .probs__bar {
+    @apply flex-1 h-2 rounded-full bg-popover overflow-hidden border border-border/40;
+  }
+  .probs__fill {
+    @apply h-full bg-primary rounded-full;
+  }
+  .probs__val {
+    @apply w-12 text-right font-mono text-xs text-muted-foreground;
+  }
+  .criteria {
+    @apply space-y-1 text-xs;
+  }
+  .criteria li {
+    @apply flex gap-2;
+  }
+  .criteria__key {
+    @apply font-mono text-primary min-w-[70px];
+  }
+  .criteria__val {
+    @apply text-muted-foreground;
+  }
+  .noul-tag {
+    @apply rounded px-2 py-0.5 text-xs font-bold;
+  }
+}
+

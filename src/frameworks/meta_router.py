@@ -5,7 +5,15 @@ from enum import Enum
 from typing import Dict, Any, Tuple, Optional, List
 from neo4j import GraphDatabase
 from typesafe_sdk import TypeSafeClient, Choice
-from .templates import MetaRouterTemplate
+from .templates import describe, entity_line
+
+# One judgment, stated once. The goal lives in `analyst_question` in the state
+# rather than being spliced into the instruction.
+ROUTER_INSTRUCTIONS = (
+    "Which entry in `reachable_frameworks` would add the most new information needed to answer "
+    "`analyst_question`? Judge by the example entity each entry names — choose the one whose "
+    "description covers something `path_so_far` has not already established."
+)
 
 
 class MetaRouterStrategy(str, Enum):
@@ -137,7 +145,8 @@ class MetaRouter:
         current_node_id: str,
         goal: str,
         path: list,
-        strategy: str = "canonical"
+        strategy: str = "canonical",
+        exclude: frozenset = frozenset()
     ) -> Tuple[str, Dict[str, Any]]:
         """
         Evaluates current state and routes to target framework using selected strategy:
@@ -149,6 +158,20 @@ class MetaRouter:
         current_framework = self.detect_node_framework(current_node_id)
         candidates = self.get_candidate_frameworks(current_node_id, current_framework)
 
+        # Frameworks the explorer already judged unhelpful this hop.
+        for fw in exclude:
+            candidates.pop(fw, None)
+
+        if set(candidates) <= {"STAY_LOCAL"}:
+            return current_framework, {
+                "current_framework": current_framework,
+                "router_decision": "EXHAUSTED",
+                "target_framework": current_framework,
+                "strategy_applied": strategy,
+                "latency_ms": 0.0,
+                "candidates": candidates,
+            }
+
         # Fast Defense shortcut: if D3FEND is directly reachable, jump immediately
         if strategy == MetaRouterStrategy.FAST_DEFENSE.value and "D3FEND" in candidates:
             return "D3FEND", {
@@ -158,7 +181,6 @@ class MetaRouter:
                 "strategy_applied": "FAST_DEFENSE_SHORTCUT",
                 "latency_ms": 0.0,
                 "candidates": candidates,
-                "phase_score": 1.0,
                 "jev_state": {"strategy": "FAST_DEFENSE_SHORTCUT", "current_node": current_node_id},
                 "jev_questions": {"shortcut": "Direct bridge to D3FEND taken by Fast Defense strategy."}
             }
@@ -174,36 +196,29 @@ class MetaRouter:
                 "candidates": candidates
             }
 
-        # Strategy-aware prompt formulation
-        strategy_desc = "Canonical Lifecycle (CWE -> CAPEC -> ATT&CK -> D3FEND)"
-        if strategy == MetaRouterStrategy.THREAT_HUNTING.value:
-            strategy_desc = "Threat Hunting Investigation (ATT&CK -> CAPEC -> CWE -> D3FEND)"
-        elif strategy == MetaRouterStrategy.FREE.value:
-            strategy_desc = "Free Semantic Navigation"
+        # Ground the decision. The model cannot be expected to know what
+        # "CAPEC-1" means, so each option names an entity it could actually reach
+        # and what that entity would tell us.
+        options = self._grounded_options(current_node_id, current_framework, candidates)
 
         state_payload = {
-            "user_goal": goal,
-            "strategy": strategy_desc,
-            "current_node": current_node_id,
-            "current_framework": current_framework,
-            "traversed_path": " -> ".join(path),
-            "candidate_frameworks": candidates
+            "analyst_question": goal,
+            "current_entity": describe(self._entity(current_node_id)) or {
+                "id": current_node_id,
+                "framework": current_framework,
+            },
+            "path_so_far": [
+                entity_line(e) if (e := self._entity(pid)) else pid for pid in path
+            ],
+            "reachable_frameworks": options,
         }
 
-        instructions = (
-            f"Strategy: '{strategy_desc}'. User Goal: '{goal}'. Current Node: {current_node_id} ({current_framework}). "
-            f"Which cybersecurity domain/framework should the investigation navigate to next?"
-        )
-        question = Choice(instructions=instructions, criteria=candidates)
-        score_q = MetaRouterTemplate.build_phase_score_question(goal, current_framework)
+        question = Choice(instructions=ROUTER_INSTRUCTIONS, criteria=options)
 
         t0 = time.time()
         response = self.client.system_one(
             state=state_payload,
-            questions={
-                "next_framework": question,
-                "phase_progress": score_q
-            }
+            questions={"next_framework": question}
         )
         latency_ms = (time.time() - t0) * 1000
 
@@ -217,11 +232,41 @@ class MetaRouter:
             "strategy_applied": strategy,
             "latency_ms": latency_ms,
             "candidates": candidates,
-            "phase_score": response.scores["phase_progress"].score,
             "jev_state": state_payload,
-            "jev_questions": {
-                "next_framework": question.instructions,
-                "phase_progress": score_q.instructions
-            }
+            "jev_questions": {"next_framework": question.instructions}
         }
         return target_fw, record
+
+    def _entity(self, node_id: str):
+        if self.store is None:
+            return None
+        try:
+            return self.store.get_entity(node_id.strip().upper())
+        except Exception:
+            return None
+
+    def _grounded_options(self, current_node_id: str, current_framework: str, candidates: Dict[str, str]) -> Dict[str, str]:
+        """Turn framework labels into questions, each with a reachable example."""
+        bridges = {}
+        if self.store is not None:
+            for b in self.store.crosswalk.bridges.get(current_node_id.strip().upper(), []):
+                if b.direction != "OUTGOING":
+                    continue
+                fw = self.store.detect_framework(b.target_id)
+                if fw != "UNKNOWN" and fw not in bridges:
+                    ent = self.store.get_entity(b.target_id)
+                    if ent is not None:
+                        bridges[fw] = entity_line(ent)
+
+        out = {}
+        for fw, desc in candidates.items():
+            if fw == "STAY_LOCAL":
+                out[fw] = (
+                    "No bridge from here would tell us more than the current entity's own "
+                    "description already does."
+                )
+            elif fw in bridges:
+                out[fw] = f"{desc} Reachable now, for example {bridges[fw]}."
+            else:
+                out[fw] = f"{desc} A bridge to this framework exists in the ontologies."
+        return out

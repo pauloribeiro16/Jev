@@ -4,7 +4,7 @@ import time
 from typing import Dict, Any, List, Optional
 from neo4j import GraphDatabase
 from typesafe_sdk import TypeSafeClient
-from .templates import TEMPLATES, D3FENDTemplate
+from .templates import TEMPLATES, describe
 from .stores import FederatedStore
 
 
@@ -81,7 +81,7 @@ class ScopedExplorer:
         """
         Performs scoped expansion and Jev System 1 evaluation using the framework template.
         """
-        template = TEMPLATES.get(target_framework, TEMPLATES["D3FEND"])
+        template = self._resolve_template(target_framework)
 
         t0_db = time.time()
         if self.store is not None:
@@ -108,31 +108,45 @@ LIMIT 12"""
         if not neighbors:
             return None
 
-        # Build clean, domain-specific criteria options for Jev Choice
+        # Candidate entities go in the state with their full content; the Choice
+        # only carries the id -> name mapping. Keys are entity ids, not
+        # branch_1..N: the docs warn that Choice results shift toward the first
+        # option, and a positional label invites exactly that bias.
         branches = {}
         option_map = {}
-        for idx, n in enumerate(neighbors):
-            key = f"branch_{idx+1}"
-            arrow = "->" if n["direction"] == "OUTGOING" else "<-"
+        candidates = {}
+        for n in sorted(neighbors, key=lambda x: x["neighbor_id"]):
+            key = n["neighbor_id"]
+            arrow = "outgoing" if n["direction"] == "OUTGOING" else "incoming"
             rel_label = n["rel_type"]
-            # Clarify inverted MITIGATES edges for defense
             if rel_label == "MITIGATES" and n["direction"] == "INCOMING":
                 rel_label = "DEFENDED_BY"
 
-            desc_preview = n["neighbor_desc"][:130] if n["neighbor_desc"] else ""
-            branches[key] = f"[{rel_label}] {arrow} [{n['neighbor_label']}] '{n['neighbor_name']}' ({n['neighbor_id']}): {desc_preview}"
+            branches[key] = n["neighbor_name"]
             option_map[key] = n
+            candidates[key] = {
+                "name": n["neighbor_name"],
+                "framework": n["neighbor_label"],
+                "relation": f"{rel_label} ({arrow} from current_entity)",
+                "description": (n["neighbor_desc"] or "")[:220] or None,
+            }
+
+        # The model must be able to decline rather than pick the least bad branch;
+        # the orchestrator already treats a dead end as a stopping condition.
+        branches["none_advances"] = "None of the above"
 
         # Formulate questions using the domain template
-        goal_q = template.build_goal_question(current_node_id, goal)
-        choice_q = template.build_choice_question(goal, branches)
-        score_q = template.build_score_question(goal)
+        goal_q = template.build_goal_question()
+        choice_q = template.build_choice_question(branches)
+        score_q = template.build_score_question()
 
         state_payload = {
-            "user_goal": goal,
-            "current_node": current_node_id,
-            "active_framework": target_framework,
-            "scoped_branches": branches
+            "analyst_question": goal,
+            "current_entity": describe(self._entity(current_node_id)) or {
+                "id": current_node_id,
+                "framework": target_framework,
+            },
+            "candidate_entities": candidates,
         }
 
         t0_jev = time.time()
@@ -141,13 +155,23 @@ LIMIT 12"""
             questions={
                 "goal_reached": goal_q,
                 "best_branch": choice_q,
-                "heuristic_score": score_q
+                "heuristic_score": score_q,
             }
         )
         jev_time = (time.time() - t0_jev) * 1000
 
         chosen_key = response.choices["best_branch"].choice
-        chosen_neighbor = option_map.get(chosen_key, neighbors[0])
+        if chosen_key == "none_advances" or chosen_key not in option_map:
+            # Not a dead end in the graph — a judgement that this framework has
+            # nothing useful here. The caller should try another framework.
+            return {
+                "status": "no-useful-branch",
+                "target_framework": target_framework,
+                "jev_state": state_payload,
+                "noul_goal": response.nouls["goal_reached"].noul,
+                "heuristic_score": response.scores["heuristic_score"].score,
+            }
+        chosen_neighbor = option_map[chosen_key]
         noul_goal = response.nouls["goal_reached"].noul
         score_val = response.scores["heuristic_score"].score
 
@@ -176,3 +200,30 @@ LIMIT 12"""
                 "heuristic_score": score_q.instructions,
             }
         }
+
+    @staticmethod
+    def _resolve_template(target_framework: str):
+        """Resolve a framework label to a template, loudly.
+
+        This used to fall back to the D3FEND template on a miss, which meant a
+        CAPEC node could be judged with the questions "which D3FEND technique
+        mitigates this?" — wrong prompts, no error. A missing template is a bug,
+        not a reason to answer a different question.
+        """
+        template = TEMPLATES.get(target_framework)
+        if template is None:
+            template = TEMPLATES.get(target_framework.replace("&", ""))
+        if template is None:
+            raise KeyError(
+                f"No question template for framework '{target_framework}'. "
+                f"Known: {sorted(TEMPLATES)}"
+            )
+        return template
+
+    def _entity(self, node_id: str):
+        if self.store is None:
+            return None
+        try:
+            return self.store.get_entity(node_id.strip().upper())
+        except Exception:
+            return None

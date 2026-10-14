@@ -2,10 +2,14 @@
 
 import os
 import json
+import sys
 import time
 from dotenv import load_dotenv
 from neo4j import GraphDatabase
-from typesafe_sdk import TypeSafeClient, Choice, Noul, Score
+from typesafe_sdk import Choice, Noul, Score
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
+from frameworks.jev_budget import get_client
 
 load_dotenv()
 
@@ -16,7 +20,7 @@ API_KEY = os.getenv("API_JEV")
 
 def test():
     driver = GraphDatabase.driver(NEO4J_URI, auth=(NEO4J_USER, NEO4J_PASSWORD))
-    client = TypeSafeClient(api_key=API_KEY)
+    client = get_client(API_KEY, site="test_threat_hop")
     
     start_node = "CAPEC-1"
     goal = "Find the D3FEND defensive countermeasure or verification technique that mitigates software file permissions or access control weaknesses."

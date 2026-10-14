@@ -14,7 +14,9 @@ from src.frameworks.orchestrator import ModularOrchestrator
 def run():
     orchestrator = ModularOrchestrator()
     start_node = "CAPEC-1"
-    goal = "Find the D3FEND defensive countermeasure or verification technique that mitigates software file permissions or access control weaknesses."
+    # Framework-neutral on purpose. Naming D3FEND here hands the router its answer
+    # in every prompt and turns a phased investigation into a countdown.
+    goal = "How does a missing access-control check in a web application turn into a concrete compromise, and what can be done to reduce that risk?"
     
     current = start_node
     path = [start_node]

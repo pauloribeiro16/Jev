@@ -6,9 +6,13 @@ Every Cypher query, Jev state payload, questions, criteria, and probabilities ar
 
 import os
 import json
+import sys
 from dotenv import load_dotenv
 from neo4j import GraphDatabase
-from typesafe_sdk import TypeSafeClient, Choice, Noul, Score
+from typesafe_sdk import Choice, Noul, Score
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+from frameworks.jev_budget import get_client
 
 load_dotenv()
 
@@ -25,7 +29,7 @@ def format_json(obj):
 class JevGraphExplorer:
     def __init__(self):
         self.driver = GraphDatabase.driver(NEO4J_URI, auth=(NEO4J_USER, NEO4J_PASSWORD))
-        self.jev_client = TypeSafeClient(api_key=JEV_API_KEY)
+        self.jev_client = get_client(JEV_API_KEY, site="jev_explorer")
 
     def close(self):
         self.driver.close()

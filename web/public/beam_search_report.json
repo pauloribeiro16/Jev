@@ -1,0 +1,57 @@
+{
+  "generated_at": "2026-10-14T15:22:20Z",
+  "incident": {
+    "title": "TinyTask Multi-Tenant Authorization Bypass (IDOR)",
+    "scenario": "An authenticated member in Workspace A manipulates the URL parameter `/api/v1/workspaces/ws_987/members` with the ID of Workspace B (`ws_123`) to modify access control lists and elevate user privileges across tenant boundaries.",
+    "target_asset": "Workspace Member Access Control List & Role Bindings",
+    "actor": "Authenticated user with standard 'Viewer' role in Workspace A"
+  },
+  "initial_cwes": [
+    "CWE-285",
+    "CWE-200",
+    "CWE-79",
+    "CWE-311"
+  ],
+  "best_path": [
+    "CWE-285",
+    "CAPEC-1",
+    "T1574.010",
+    "D3-AVE"
+  ],
+  "best_score": 0.4032,
+  "drift_guard_verdict": 0.14,
+  "total_expansions": 5,
+  "avg_latency_per_expansion_ms": 256.6,
+  "total_latency_ms": 1284.0,
+  "all_surviving_paths": [
+    {
+      "path": [
+        "CWE-285",
+        "CAPEC-1",
+        "T1574.010",
+        "D3-AVE"
+      ],
+      "score": 0.4032,
+      "cumulative_prob": 0.4032
+    },
+    {
+      "path": [
+        "CWE-285",
+        "CAPEC-1",
+        "T1574.010",
+        "D3-SU"
+      ],
+      "score": 0.3528,
+      "cumulative_prob": 0.3528
+    }
+  ],
+  "backtracked_branches": [
+    {
+      "branch": [
+        "CWE-285",
+        "CAPEC-39"
+      ],
+      "reason": "Sem vizinhos ATT&CK (dead-end ontológico). Backtracking automático para CAPEC-1 -> T1574.010."
+    }
+  ]
+}

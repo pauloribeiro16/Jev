@@ -1,8 +1,71 @@
-"""Specialized question templates and evaluation criteria for each cybersecurity framework."""
+"""Question templates per cybersecurity framework.
 
-from dataclasses import dataclass
-from typing import Dict, List
+Design rules these follow, from the TypeSafe docs:
+
+* The model does not know our ontologies — "do not rely on knowledge stored in
+  model weights when current information can come from your own knowledge base".
+  So every question refers to entities by backticked state path, and the caller
+  puts names and descriptions in the state. A bare id carries no meaning.
+* The state carries the content; instructions carry only the judgment. Do not
+  splice goal text into a template string — point at `analyst_question` instead.
+* "Score levels must describe concrete situations and stand on their own." Each
+  level below names a situation an analyst could recognise, never a degree.
+* Question ids are not sent to the model, so the instructions restate the full
+  meaning rather than relying on the key.
+"""
+
+from dataclasses import dataclass, field
+from typing import Dict, List, Optional
 from typesafe_sdk import Choice, Noul, Score
+
+# "Send less than you think you should" — unrelated state causes context rot, so
+# descriptions are clipped rather than pasted whole.
+DESC_CHARS = 260
+
+
+def describe(node, desc_chars: int = DESC_CHARS) -> Optional[Dict]:
+    """Ground an entity for the model: identity plus meaning, not a bare id."""
+    if node is None:
+        return None
+    desc = (node.description or "").strip()
+    clipped = desc[:desc_chars]
+    if len(desc) > desc_chars:
+        clipped += "…"
+    out = {"id": node.id, "name": node.name, "framework": node.framework}
+    if node.category:
+        out["category"] = node.category
+    if clipped:
+        out["description"] = clipped
+    return out
+
+
+def entity_line(node) -> str:
+    """Compact one-line label for a path summary."""
+    return f"{node.id} — {node.name}"
+
+
+# Shared instructions. They name the state paths instead of repeating content.
+GOAL_REACHED_Q = (
+    "Is `current_entity`, as described, already the answer to `analyst_question`? "
+    "Answer yes only if a reader could answer the question using this entity alone."
+)
+
+BEST_BRANCH_Q = (
+    "Which entry in `candidate_entities` adds the most new information needed to answer "
+    "`analyst_question`? Judge each entry by what it adds beyond what `current_entity` "
+    "already provides, not by which framework it belongs to."
+)
+
+GOAL_CRITERIA = {
+    "true": (
+        "This entity on its own answers what the analyst asked — the description already "
+        "contains the specific thing being asked for."
+    ),
+    "false": (
+        "This entity covers only one part of what was asked, or describes something adjacent "
+        "to it; another entity would still be needed."
+    ),
+}
 
 
 @dataclass
@@ -10,15 +73,17 @@ class FrameworkTemplate:
     name: str
     label: str
     description: str
+    score_question: str = ""
+    score_criteria: List[str] = field(default_factory=list)
 
-    def build_goal_question(self, current_node_id: str, goal: str) -> Noul:
-        raise NotImplementedError
+    def build_goal_question(self) -> Noul:
+        return Noul(instructions=GOAL_REACHED_Q, criteria=GOAL_CRITERIA)
 
-    def build_choice_question(self, goal: str, branches: Dict[str, str]) -> Choice:
-        raise NotImplementedError
+    def build_choice_question(self, candidates: Dict[str, str]) -> Choice:
+        return Choice(instructions=BEST_BRANCH_Q, criteria=candidates)
 
-    def build_score_question(self, goal: str) -> Score:
-        raise NotImplementedError
+    def build_score_question(self) -> Score:
+        return Score(instructions=self.score_question, criteria=self.score_criteria)
 
 
 class CAPECTemplate(FrameworkTemplate):
@@ -26,30 +91,18 @@ class CAPECTemplate(FrameworkTemplate):
         super().__init__(
             name="CAPEC",
             label="Attack Pattern",
-            description="Explores adversary attack patterns, execution flow, prerequisites and escalation."
-        )
-
-    def build_goal_question(self, current_node_id: str, goal: str) -> Noul:
-        return Noul(
-            instructions=(
-                f"Is the current entity '{current_node_id}' already the final desired answer or countermeasure "
-                f"for the user goal: '{goal}'? (Note: CAPEC nodes represent offensive attacks, not defensive solutions)."
-            )
-        )
-
-    def build_choice_question(self, goal: str, branches: Dict[str, str]) -> Choice:
-        return Choice(
-            instructions=(
-                f"Goal: '{goal}'. We are analyzing attack patterns. Which branch represents the most accurate "
-                f"progression or intermediate bridge toward understanding and mitigating this attack vector?"
+            description="Adversary attack patterns: goal, execution flow, prerequisites and escalation.",
+            score_question=(
+                "How much new information does `current_entity` add about how this attack "
+                "actually runs?"
             ),
-            criteria=branches
-        )
-
-    def build_score_question(self, goal: str) -> Score:
-        return Score(
-            instructions=f"How relevant is this attack pattern to the overall threat investigation '{goal}'?",
-            criteria=["Low relevance attack", "Moderate prerequisite attack", "Direct primary attack vector"]
+            score_criteria=[
+                "Restates the same attack pattern in different words; no mechanism is added.",
+                "Describes a precondition for the attack without saying how it behaves.",
+                "Describes a different attack pattern aimed at the same goal.",
+                "Describes a concrete step or variation of how this attack executes.",
+                "Explains the conditions in a real system under which this attack becomes possible.",
+            ],
         )
 
 
@@ -58,30 +111,18 @@ class CWETemplate(FrameworkTemplate):
         super().__init__(
             name="CWE",
             label="Software Weakness",
-            description="Explores code-level vulnerabilities, architectural flaws and root causes."
-        )
-
-    def build_goal_question(self, current_node_id: str, goal: str) -> Noul:
-        return Noul(
-            instructions=(
-                f"Does the software weakness '{current_node_id}' constitute the definitive solution to the goal: '{goal}'? "
-                f"(Weaknesses represent software flaws that must be fixed, not defensive tools)."
-            )
-        )
-
-    def build_choice_question(self, goal: str, branches: Dict[str, str]) -> Choice:
-        return Choice(
-            instructions=(
-                f"Goal: '{goal}'. We are diagnosing software weaknesses. Which branch represents the core programming "
-                f"or architectural root-cause that enables the vulnerability?"
+            description="Code-level vulnerabilities and the architectural flaws that cause them.",
+            score_question=(
+                "How much does `current_entity` sharpen the explanation of the underlying "
+                "weakness?"
             ),
-            criteria=branches
-        )
-
-    def build_score_question(self, goal: str) -> Score:
-        return Score(
-            instructions=f"Rate the severity of this software weakness in relation to '{goal}':",
-            criteria=["Peripheral code defect", "Significant security flaw", "Critical exploitable vulnerability"]
+            score_criteria=[
+                "Describes a weakness unrelated to why the current one occurs.",
+                "Can co-occur with the current weakness but does not explain it.",
+                "Can cause or worsen the current weakness.",
+                "Names the specific coding or design flaw that produces the current weakness.",
+                "Is the broader weakness of which the current one is a specific instance.",
+            ],
         )
 
 
@@ -90,30 +131,18 @@ class AttackTemplate(FrameworkTemplate):
         super().__init__(
             name="ATTACK",
             label="Adversary Technique",
-            description="Explores MITRE Enterprise ATT&CK tactical techniques, execution mechanisms and procedures."
-        )
-
-    def build_goal_question(self, current_node_id: str, goal: str) -> Noul:
-        return Noul(
-            instructions=(
-                f"Does the adversary technique '{current_node_id}' directly satisfy the goal: '{goal}'? "
-                f"(ATT&CK represents adversary actions, not defense mechanisms)."
-            )
-        )
-
-    def build_choice_question(self, goal: str, branches: Dict[str, str]) -> Choice:
-        return Choice(
-            instructions=(
-                f"Goal: '{goal}'. We are tracking adversary techniques. Which branch represents the critical "
-                f"execution mechanism or operational step used in this scenario?"
+            description="Concrete adversary procedures observed in real intrusions.",
+            score_question=(
+                "How much does `current_entity` explain how an adversary would actually carry "
+                "out this step of the operation?"
             ),
-            criteria=branches
-        )
-
-    def build_score_question(self, goal: str) -> Score:
-        return Score(
-            instructions=f"How critical is this adversary technique to achieving the objective '{goal}'?",
-            criteria=["Incidental technique", "Core enabling technique", "Direct impact technique"]
+            score_criteria=[
+                "Describes a capability with no bearing on the step under investigation.",
+                "Belongs to a different phase of the operation than the one being investigated.",
+                "Used by the same kind of adversary, but for a different objective.",
+                "Plausibly the technique an adversary would use at this step.",
+                "Specifies exactly how the step would be performed, down to the implementation detail.",
+            ],
         )
 
 
@@ -122,29 +151,17 @@ class AtlasTemplate(FrameworkTemplate):
         super().__init__(
             name="ATLAS",
             label="AI/ML Threat Technique",
-            description="Explores MITRE ATLAS threats specific to AI/ML systems (data poisoning, prompt injection, model theft)."
-        )
-
-    def build_goal_question(self, current_node_id: str, goal: str) -> Noul:
-        return Noul(
-            instructions=(
-                f"Does the AI threat technique '{current_node_id}' answer the defensive goal: '{goal}'?"
-            )
-        )
-
-    def build_choice_question(self, goal: str, branches: Dict[str, str]) -> Choice:
-        return Choice(
-            instructions=(
-                f"Goal: '{goal}'. We are analyzing AI/ML adversarial techniques. Which branch captures the specific "
-                f"AI attack vector (prompt manipulation, data evasion, or model exploitation)?"
+            description="Attacks specific to AI and machine-learning systems.",
+            score_question=(
+                "How much does `current_entity` explain the AI-specific failure being investigated?"
             ),
-            criteria=branches
-        )
-
-    def build_score_question(self, goal: str) -> Score:
-        return Score(
-            instructions=f"Rate the specificity of this AI attack technique for '{goal}':",
-            criteria=["Generic IT threat", "Indirect ML effect", "Direct adversarial AI exploit"]
+            score_criteria=[
+                "Describes a conventional attack with no AI-specific aspect.",
+                "Touches an ML system but concerns data or infrastructure rather than the model behaviour.",
+                "Describes manipulating the model's training data or objective.",
+                "Describes manipulating the model's input or output at inference time.",
+                "Describes the specific manipulation used, with the model behaviour it subverts.",
+            ],
         )
 
 
@@ -153,114 +170,18 @@ class D3FENDTemplate(FrameworkTemplate):
         super().__init__(
             name="D3FEND",
             label="Defensive Countermeasure",
-            description="Explores MITRE D3FEND defensive countermeasures (Harden, Detect, Isolate, Evict, Model)."
-        )
-
-    def build_goal_question(self, current_node_id: str, goal: str) -> Noul:
-        return Noul(
-            instructions=(
-                f"Does this defensive countermeasure '{current_node_id}' directly satisfy, neutralize, or answer "
-                f"the user's defensive security goal: '{goal}'?"
-            )
-        )
-
-    def build_choice_question(self, goal: str, branches: Dict[str, str]) -> Choice:
-        return Choice(
-            instructions=(
-                f"Goal: '{goal}'. We are evaluating defensive countermeasures. Which D3FEND technique offers the most "
-                f"effective and direct security mitigation for the identified threat?"
+            description="Countermeasures and mitigations available to a defender.",
+            score_question=(
+                "How much does `current_entity` change what a defender could actually do about "
+                "the situation?"
             ),
-            criteria=branches
-        )
-
-    def build_score_question(self, goal: str) -> Score:
-        return Score(
-            instructions=f"Rate the mitigation effectiveness of this defensive countermeasure against '{goal}':",
-            criteria=["Marginal defense", "Partial hardening/detection", "Complete primary mitigation"]
-        )
-
-
-class MetaRouterTemplate:
-    """Template used by the Jev Meta-Router to select which framework/expert to query next."""
-
-    @staticmethod
-    def build_framework_selection_question(goal: str, current_phase: str, candidate_frameworks: Dict[str, str]) -> Choice:
-        return Choice(
-            instructions=(
-                f"Investigation Goal: '{goal}'. Current Phase: '{current_phase}'. "
-                f"Which cybersecurity domain/framework should the investigation navigate to next?"
-            ),
-            criteria=candidate_frameworks
-        )
-
-    @staticmethod
-    def build_phase_score_question(goal: str, phase: str) -> Score:
-        return Score(
-            instructions=f"How close is the current phase '{phase}' to concluding the defensive investigation for '{goal}'?",
-            criteria=["Phase 1: Attack surface", "Phase 2: Technical flaw", "Phase 3: Adversary action", "Phase 4: Defensive mitigation"]
-        )
-
-
-class ICSAttackTemplate(FrameworkTemplate):
-    def __init__(self):
-        super().__init__(
-            name="ICS_ATTACK",
-            label="Industrial & IoT (ICS/OT)",
-            description="Explores operational technology threats targeting PLCs, SCADA, RTUs, field buses, and embedded industrial systems."
-        )
-
-    def build_goal_question(self, current_node_id: str, goal: str) -> Noul:
-        return Noul(
-            instructions=(
-                f"Does the ICS/OT technique '{current_node_id}' directly fulfill the operational threat/defense "
-                f"objective: '{goal}' in the physical or industrial control environment?"
-            )
-        )
-
-    def build_choice_question(self, goal: str, branches: Dict[str, str]) -> Choice:
-        return Choice(
-            instructions=(
-                f"Goal: '{goal}'. Which ICS/OT branch captures the most critical disruption to field devices, "
-                f"control logic, safety systems, or industrial protocol integrity?"
-            ),
-            criteria=branches
-        )
-
-    def build_score_question(self, goal: str) -> Score:
-        return Score(
-            instructions=f"Rate the industrial process impact of this technique for '{goal}':",
-            criteria=["Incidental telemetry loss", "Controller logic compromise", "Critical physical process shutdown"]
-        )
-
-
-class MobileAttackTemplate(FrameworkTemplate):
-    def __init__(self):
-        super().__init__(
-            name="MOBILE_ATTACK",
-            label="Mobile Device (Android/iOS)",
-            description="Explores mobile platform threats (app sandboxing, permission abuse, baseband, OS jailbreaking)."
-        )
-
-    def build_goal_question(self, current_node_id: str, goal: str) -> Noul:
-        return Noul(
-            instructions=(
-                f"Does the mobile technique '{current_node_id}' satisfy the target mobile device investigation: '{goal}'?"
-            )
-        )
-
-    def build_choice_question(self, goal: str, branches: Dict[str, str]) -> Choice:
-        return Choice(
-            instructions=(
-                f"Goal: '{goal}'. Which mobile vector represents the key exploit mechanism (repackaging, SMS/call interception, "
-                f"root escalation, or credential harvesting)?"
-            ),
-            criteria=branches
-        )
-
-    def build_score_question(self, goal: str) -> Score:
-        return Score(
-            instructions=f"Rate the severity of mobile device compromise for '{goal}':",
-            criteria=["Minor permission abuse", "Background persistence", "Full OS root/kernel compromise"]
+            score_criteria=[
+                "Names a defensive concept without attaching any concrete action to it.",
+                "Describes hardening the system already performs by default.",
+                "Describes a configuration change a defender could apply without redesigning anything.",
+                "Describes monitoring or detection that would reveal this activity happening.",
+                "Describes a change to the system's design that removes the capability entirely.",
+            ],
         )
 
 
@@ -270,9 +191,12 @@ TEMPLATES: Dict[str, FrameworkTemplate] = {
     "ATTACK": AttackTemplate(),
     "ATLAS": AtlasTemplate(),
     "D3FEND": D3FENDTemplate(),
-    "ICS_ATTACK": ICSAttackTemplate(),
-    "MOBILE_ATTACK": MobileAttackTemplate(),
+    "ICS_ATTACK": AttackTemplate(),
+    "MOBILE_ATTACK": AttackTemplate(),
 }
+
+# The router can emit either spelling; both must resolve to the ATT&CK template.
+TEMPLATES["ATT&CK"] = TEMPLATES["ATTACK"]
 
 TEMPLATES_CATALOG = [
     {
@@ -280,95 +204,39 @@ TEMPLATES_CATALOG = [
         "name": "CAPECTemplate",
         "label": "Attack Pattern",
         "icon": "Crosshair",
-        "color": "#F97316",
-        "description": "Explores adversary attack patterns, execution flow, prerequisites and privilege escalation.",
-        "goalQuestion": "Is the current entity '{node}' already the final desired answer or countermeasure for the user goal: '{goal}'?",
-        "choiceQuestion": "Given the threat objective '{goal}', which attack branch represents the most critical progression or intermediate bridge?",
-        "scoreQuestion": "How relevant is this attack pattern to the overall threat investigation '{goal}'?",
-        "criteriaScale": ["Low relevance attack", "Moderate prerequisite attack", "Direct primary attack vector"]
+        "color": "#E69F00",
+        "description": "Adversary attack patterns, execution flow, prerequisites and privilege escalation.",
     },
     {
         "framework": "CWE",
         "name": "CWETemplate",
         "label": "Software Weakness",
         "icon": "Bug",
-        "color": "#8B5CF6",
-        "description": "Explores code-level vulnerabilities, architectural flaws and fundamental root-causes.",
-        "goalQuestion": "Does the software weakness '{node}' constitute the definitive solution to the goal: '{goal}'?",
-        "choiceQuestion": "Given the goal '{goal}', which branch represents the core programming or architectural root-cause flaw?",
-        "scoreQuestion": "Rate the severity of this software weakness in relation to '{goal}':",
-        "criteriaScale": ["Peripheral code defect", "Significant security flaw", "Critical exploitable vulnerability"]
+        "color": "#0072B2",
+        "description": "Code-level vulnerabilities, architectural flaws and root causes.",
     },
     {
         "framework": "ATTACK",
         "name": "AttackTemplate",
         "label": "Adversary Technique",
-        "icon": "Flame",
-        "color": "#EF4444",
-        "description": "Explores MITRE Enterprise ATT&CK tactical techniques, operational execution mechanisms and procedures.",
-        "goalQuestion": "Does adversary technique '{node}' directly satisfy the goal: '{goal}'?",
-        "choiceQuestion": "Given the goal '{goal}', which adversary technique branch advances the operational attack chain towards the target?",
-        "scoreQuestion": "How critical is this adversary technique to achieving the objective '{goal}'?",
-        "criteriaScale": ["Incidental technique", "Core enabling technique", "Direct impact technique"]
+        "icon": "Crosshair",
+        "color": "#D55E00",
+        "description": "MITRE ATT&CK tactics, techniques and procedures.",
     },
     {
         "framework": "ATLAS",
         "name": "AtlasTemplate",
-        "label": "AI/ML Threat",
-        "icon": "Cpu",
-        "color": "#E11D48",
-        "description": "Explores MITRE ATLAS threats specific to AI/ML systems (prompt injection, model evasion, data poisoning).",
-        "goalQuestion": "Does AI/ML threat technique '{node}' satisfy the adversarial goal: '{goal}'?",
-        "choiceQuestion": "Given the goal '{goal}', which branch captures the specific AI attack vector (prompt manipulation, data evasion, or model theft)?",
-        "scoreQuestion": "Rate the specificity of this AI attack technique for '{goal}':",
-        "criteriaScale": ["Generic IT threat", "Indirect ML effect", "Direct adversarial AI exploit"]
+        "label": "AI/ML Threat Technique",
+        "icon": "Bot",
+        "color": "#CC79A7",
+        "description": "Attacks on AI/ML systems: data poisoning, prompt injection, model theft.",
     },
     {
         "framework": "D3FEND",
         "name": "D3FENDTemplate",
         "label": "Defensive Countermeasure",
-        "icon": "ShieldCheck",
-        "color": "#10B981",
-        "description": "Explores MITRE D3FEND defensive countermeasures (Harden, Detect, Isolate, Evict, Model, Verify).",
-        "goalQuestion": "Does this defensive countermeasure '{node}' directly satisfy, neutralize, or answer the user's defensive security goal: '{goal}'?",
-        "choiceQuestion": "Given the security goal '{goal}', which D3FEND technique offers the most effective and direct mitigation for the identified threat?",
-        "scoreQuestion": "Rate the mitigation effectiveness of this defensive countermeasure against '{goal}':",
-        "criteriaScale": ["Marginal defense", "Partial hardening/detection", "Complete primary mitigation"]
+        "icon": "Shield",
+        "color": "#009E73",
+        "description": "Countermeasures, hardening and detection for defending against a technique.",
     },
-    {
-        "framework": "ICS_ATTACK",
-        "name": "ICSAttackTemplate",
-        "label": "Industrial & IoT (ICS/OT)",
-        "icon": "Radio",
-        "color": "#D97706",
-        "description": "Explores threats against Operational Technology, SCADA, PLCs, RTUs, and Industrial IoT devices.",
-        "goalQuestion": "Does the ICS/OT technique '{node}' fulfill the operational objective: '{goal}' in the physical or industrial control environment?",
-        "choiceQuestion": "Which ICS/OT branch captures the most critical disruption to field devices, control logic, or process integrity?",
-        "scoreQuestion": "Rate the industrial process impact of this technique for '{goal}':",
-        "criteriaScale": ["Incidental telemetry loss", "Controller logic compromise", "Critical physical process shutdown"]
-    },
-    {
-        "framework": "MOBILE_ATTACK",
-        "name": "MobileAttackTemplate",
-        "label": "Mobile Device (Android/iOS)",
-        "icon": "Smartphone",
-        "color": "#0284C7",
-        "description": "Explores mobile operating system threats (sandboxing, permissions, baseband, malicious applications).",
-        "goalQuestion": "Does the mobile technique '{node}' satisfy the target mobile device investigation: '{goal}'?",
-        "choiceQuestion": "Which mobile vector represents the key exploit mechanism (app repackaging, permission abuse, or kernel compromise)?",
-        "scoreQuestion": "Rate the severity of mobile device compromise for '{goal}':",
-        "criteriaScale": ["Minor permission abuse", "Background persistence", "Full OS root/kernel compromise"]
-    },
-    {
-        "framework": "META_ROUTER",
-        "name": "MetaRouterTemplate",
-        "label": "Ontology Meta-Router",
-        "icon": "Compass",
-        "color": "#06B6D4",
-        "description": "Evaluates cross-framework transitions and selects optimal domain experts (CWE, CAPEC, ATT&CK, ATLAS, D3FEND).",
-        "goalQuestion": "Is current domain investigation phase concluding the user goal: '{goal}'?",
-        "choiceQuestion": "Given the investigation goal '{goal}', which cybersecurity domain/framework should be navigated to next?",
-        "scoreQuestion": "How close is the current phase to concluding the defensive investigation for '{goal}'?",
-        "criteriaScale": ["Phase 1: Attack surface", "Phase 2: Technical flaw", "Phase 3: Adversary action", "Phase 4: Defensive mitigation"]
-    }
 ]

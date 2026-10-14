@@ -1,0 +1,261 @@
+{
+  "generated_at": "2026-10-14T14:53:50Z",
+  "total_execution_time_ms": 3152.8,
+  "summary": {
+    "position_bias_stability": 1.0,
+    "max_probability_deviation": 0.0,
+    "adversarial_distractor_accuracy": 1.0,
+    "round_trip_consistency_rate": 0.16666666666666666
+  },
+  "tests": {
+    "position_bias": {
+      "test_name": "position_bias_permutation",
+      "description": "Avalia estabilidade de decisão sob rotação e inversão de opções no Choice",
+      "decision_stability": 1.0,
+      "max_probability_deviation": 0.0,
+      "probability_deviations_by_candidate": {
+        "CWE-285": 0.0,
+        "CWE-200": 0.0,
+        "CWE-79": 0.0,
+        "CWE-311": 0.0
+      },
+      "runs": [
+        {
+          "permutation_label": "Original (A, B, C, D)",
+          "order": [
+            "CWE-285",
+            "CWE-200",
+            "CWE-79",
+            "CWE-311"
+          ],
+          "decision": "CWE-285",
+          "confidence": 1.0,
+          "probabilities": {
+            "CWE-285": 1.0,
+            "CWE-200": 0.0,
+            "CWE-79": 0.0,
+            "CWE-311": 0.0
+          },
+          "latency_ms": 408.2
+        },
+        {
+          "permutation_label": "Rotacionada +1 (B, C, D, A)",
+          "order": [
+            "CWE-200",
+            "CWE-79",
+            "CWE-311",
+            "CWE-285"
+          ],
+          "decision": "CWE-285",
+          "confidence": 1.0,
+          "probabilities": {
+            "CWE-200": 0.0,
+            "CWE-79": 0.0,
+            "CWE-311": 0.0,
+            "CWE-285": 1.0
+          },
+          "latency_ms": 233.8
+        },
+        {
+          "permutation_label": "Rotacionada +2 (C, D, A, B)",
+          "order": [
+            "CWE-79",
+            "CWE-311",
+            "CWE-285",
+            "CWE-200"
+          ],
+          "decision": "CWE-285",
+          "confidence": 1.0,
+          "probabilities": {
+            "CWE-79": 0.0,
+            "CWE-311": 0.0,
+            "CWE-285": 1.0,
+            "CWE-200": 0.0
+          },
+          "latency_ms": 229.5
+        },
+        {
+          "permutation_label": "Invertida (D, C, B, A)",
+          "order": [
+            "CWE-311",
+            "CWE-79",
+            "CWE-200",
+            "CWE-285"
+          ],
+          "decision": "CWE-285",
+          "confidence": 1.0,
+          "probabilities": {
+            "CWE-311": 0.0,
+            "CWE-79": 0.0,
+            "CWE-200": 0.0,
+            "CWE-285": 1.0
+          },
+          "latency_ms": 211.9
+        }
+      ]
+    },
+    "adversarial_distractor": {
+      "test_name": "adversarial_distractor_test",
+      "description": "Avalia imunidade do Jev perante pistas falsas e ruído de infraestrutura no incidente",
+      "accuracy": 1.0,
+      "variants_evaluated": 3,
+      "results": [
+        {
+          "variant": "Cenário Limpo (Baseline)",
+          "decision": "CWE-918",
+          "expected": "CWE-918",
+          "is_correct": true,
+          "confidence": 1.0,
+          "noise_rejection_score": 2.67,
+          "probabilities": {
+            "CWE-918": 1.0,
+            "CWE-307": 0.0,
+            "CWE-798": 0.0,
+            "CWE-200": 0.0
+          },
+          "latency_ms": 256.9
+        },
+        {
+          "variant": "Ruído Periférico (Mild Infrastructure Noise)",
+          "decision": "CWE-918",
+          "expected": "CWE-918",
+          "is_correct": true,
+          "confidence": 1.0,
+          "noise_rejection_score": 2.06,
+          "probabilities": {
+            "CWE-918": 1.0,
+            "CWE-307": 0.0,
+            "CWE-798": 0.0,
+            "CWE-200": 0.0
+          },
+          "latency_ms": 239.1
+        },
+        {
+          "variant": "Distrator Adversário Agressivo (Red Herring de Brute Force / SSH)",
+          "decision": "CWE-918",
+          "expected": "CWE-918",
+          "is_correct": true,
+          "confidence": 1.0,
+          "noise_rejection_score": 2.2,
+          "probabilities": {
+            "CWE-918": 1.0,
+            "CWE-307": 0.0,
+            "CWE-798": 0.0,
+            "CWE-200": 0.0
+          },
+          "latency_ms": 219.0
+        }
+      ]
+    },
+    "round_trip_drift": {
+      "test_name": "round_trip_semantic_drift",
+      "description": "Verificação inversa (D3FEND -> CWE) via Noul e Score para detetar perda de alinhamento causal",
+      "consistency_rate": 0.16666666666666666,
+      "chains_evaluated": 6,
+      "evaluations": [
+        {
+          "case_id": "case-1-idor-tinytask",
+          "title": "TinyTask Multi-Tenant Authorization Bypass (IDOR)",
+          "root_cwe": "CWE-285: Improper Authorization",
+          "final_d3fend": "D3-AZET: Authorization Event Thresholding",
+          "full_path": [
+            "CWE-285",
+            "CAPEC-39",
+            "T1078",
+            "D3-AZET"
+          ],
+          "alignment_verdict": 0.29,
+          "alignment_score": 1.01,
+          "is_aligned": false,
+          "drift_severity": "DERIVA DETETADA",
+          "latency_ms": 251.0
+        },
+        {
+          "case_id": "case-2-credential-extraction",
+          "title": "Sensitive Memory & Credential Store Extraction",
+          "root_cwe": "CWE-1266: Improper Scrubbing of Sensitive Data from Decommissioned Device",
+          "final_d3fend": "D3-FE: File Encryption",
+          "full_path": [
+            "CWE-1266",
+            "CAPEC-150",
+            "T1555",
+            "D3-FE"
+          ],
+          "alignment_verdict": 0.37,
+          "alignment_score": 1.23,
+          "is_aligned": false,
+          "drift_severity": "DERIVA DETETADA",
+          "latency_ms": 209.0
+        },
+        {
+          "case_id": "case-3-adversarial-ai-prompt-injection",
+          "title": "Indirect Prompt Injection via Unsanitized RAG Ingestion",
+          "root_cwe": "CWE-20: Improper Input Validation",
+          "final_d3fend": "D3-CF: Content Filtering",
+          "full_path": [
+            "CWE-20",
+            "CAPEC-153",
+            "AML.T0051",
+            "D3-CF"
+          ],
+          "alignment_verdict": 0.59,
+          "alignment_score": 1.83,
+          "is_aligned": true,
+          "drift_severity": "Baixa",
+          "latency_ms": 223.9
+        },
+        {
+          "case_id": "case-4-supply-chain-dependency-injection",
+          "title": "CI/CD Dependency Confusion & Untrusted Package Injection",
+          "root_cwe": "CWE-494: Download of Code Without Integrity Check",
+          "final_d3fend": "D3-SWI: Software Inventory",
+          "full_path": [
+            "CWE-494",
+            "CAPEC-438",
+            "T1195.001",
+            "D3-SWI"
+          ],
+          "alignment_verdict": 0.19,
+          "alignment_score": 0.91,
+          "is_aligned": false,
+          "drift_severity": "DERIVA DETETADA",
+          "latency_ms": 244.2
+        },
+        {
+          "case_id": "case-5-cloud-ssrf-imds-privilege-escalation",
+          "title": "Server-Side Request Forgery (SSRF) to Cloud IMDS Service",
+          "root_cwe": "CWE-918: Server-Side Request Forgery (SSRF)",
+          "final_d3fend": "D3-ITF: Inbound Traffic Filtering",
+          "full_path": [
+            "CWE-918",
+            "CAPEC-664",
+            "T1552.005",
+            "D3-ITF"
+          ],
+          "alignment_verdict": 0.44,
+          "alignment_score": 1.24,
+          "is_aligned": false,
+          "drift_severity": "DERIVA DETETADA",
+          "latency_ms": 208.3
+        },
+        {
+          "case_id": "case-6-http-header-session-hijacking",
+          "title": "HTTP Header Injection & Web Session Hijacking",
+          "root_cwe": "CWE-113: Improper Neutralization of CRLF Sequences in HTTP Headers ('HTTP Request/Response Splitting')",
+          "final_d3fend": "D3-ANCI: Authentication Cache Invalidation",
+          "full_path": [
+            "CWE-113",
+            "CAPEC-31",
+            "T1539",
+            "D3-ANCI"
+          ],
+          "alignment_verdict": 0.12,
+          "alignment_score": 0.7,
+          "is_aligned": false,
+          "drift_severity": "DERIVA DETETADA",
+          "latency_ms": 211.8
+        }
+      ]
+    }
+  }
+}
